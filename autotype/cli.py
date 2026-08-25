@@ -2,14 +2,15 @@ from __future__ import annotations
 
 import argparse
 import os
-import sys
 from pathlib import Path
 
+from .behaviour import apply_human_behaviour, render_dry_run
+from .behaviour.profiles import PROFILES
 from .config import HotkeyConfig, TypingConfig
 from .controller import RunController, RunState
-from .executors import MockExecutor, WindowsExecutor
+from .executors import WindowsExecutor
 from .hotkeys import WindowsHotkeyMonitor
-from .planner import build_actions_from_text, render_dry_run
+from .planner import build_actions_from_text
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -18,6 +19,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--file", type=Path, help="Read text from a file")
     parser.add_argument("--speed", type=float, default=40.0, help="Typing speed in words per minute")
     parser.add_argument("--countdown", type=float, default=5.0, help="Countdown before typing starts")
+    parser.add_argument("--profile", choices=sorted(PROFILES), default="natural", help="Human behaviour profile")
+    parser.add_argument("--seed", type=int, help="Seed for deterministic timing variation")
     parser.add_argument("--dry-run", action="store_true", help="Print planned actions instead of typing")
     parser.add_argument("--pause-key", default="F8", help="Hotkey for pause/resume")
     parser.add_argument("--stop-key", default="F12", help="Hotkey for emergency stop")
@@ -46,9 +49,22 @@ def main(argv: list[str] | None = None) -> int:
     actions = build_actions_from_text(text)
 
     if args.dry_run:
-        summary = render_dry_run(actions, typing_config)
-        print(summary.render())
+        print(
+            render_dry_run(
+                actions,
+                profile=args.profile,
+                wpm=args.speed,
+                seed=args.seed,
+            )
+        )
         return 0
+
+    behavioural_actions = apply_human_behaviour(
+        actions,
+        profile=args.profile,
+        wpm=args.speed,
+        seed=args.seed,
+    )
 
     if os.name != "nt":
         raise SystemExit("Live typing requires Windows.")
@@ -67,7 +83,7 @@ def main(argv: list[str] | None = None) -> int:
 
     monitor.start()
     try:
-        result = controller.run(actions, countdown_seconds=typing_config.countdown_seconds)
+        result = controller.run(behavioural_actions, countdown_seconds=typing_config.countdown_seconds)
     finally:
         monitor.close()
 

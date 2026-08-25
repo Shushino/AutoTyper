@@ -37,13 +37,16 @@ def test_pause_and_resume_are_stateful() -> None:
 
 def test_stop_transitions_to_stopped_from_running() -> None:
     executor = MockExecutor()
-    controller = RunController(executor=executor, config=TypingConfig(words_per_minute=20, countdown_seconds=0))
+    controller = RunController(
+        executor=executor,
+        config=TypingConfig(words_per_minute=20, countdown_seconds=0, poll_interval_seconds=0.01),
+    )
 
     started = threading.Event()
 
     def run_controller() -> None:
         started.set()
-        controller.run([TypeText("abcd")], countdown_seconds=0)
+        controller.run([Pause(0.2)], countdown_seconds=0)
 
     thread = threading.Thread(target=run_controller)
     thread.start()
@@ -53,7 +56,7 @@ def test_stop_transitions_to_stopped_from_running() -> None:
     thread.join(timeout=2)
 
     assert controller.state == RunState.STOPPED
-    assert len(executor.calls) < 4
+    assert executor.calls == []
 
 
 def test_stop_during_countdown_is_respected() -> None:

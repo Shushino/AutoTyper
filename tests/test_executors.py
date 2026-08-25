@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import ctypes
+import os
+
+import pytest
 
 from autotype.executors import (
     HARDWAREINPUT,
@@ -13,6 +16,7 @@ from autotype.executors import (
 )
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows ctypes layout is only defined on Windows")
 def test_win32_input_struct_sizes_match_64bit_layout() -> None:
     if ctypes.sizeof(ctypes.c_void_p) == 8:
         assert ctypes.sizeof(KEYBDINPUT) == 24
