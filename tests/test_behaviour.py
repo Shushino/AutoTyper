@@ -4,7 +4,7 @@ import statistics
 
 from autotype.actions import KeyPress, Pause, TypeText
 from autotype.behaviour import apply_human_behaviour
-from autotype.behaviour.engine import render_dry_run
+from autotype.behaviour.engine import build_preview, render_dry_run
 
 
 def _extract_pause_durations(actions):
@@ -104,12 +104,23 @@ def test_existing_pause_and_keypress_actions_remain_in_order() -> None:
 
 def test_dry_run_preview_reports_profile_and_duration() -> None:
     source = [TypeText("Hi")]
-    rendered = render_dry_run(source, profile="precise", wpm=60, seed=5)
+    rendered = render_dry_run(source, profile="precise", wpm=60, typo_rate=0.0, seed=5)
+    preview = build_preview(source, profile="precise", wpm=60, typo_rate=0.0, seed=5)
 
     assert "[DRY RUN]" in rendered
     assert "Profile: precise" in rendered
     assert "Speed: 60 WPM" in rendered
+    assert "Typo rate: 0.000" in rendered
     assert "Seed: 5" in rendered
     assert "TypeText('H')" in rendered
     assert "Pause(" in rendered
     assert "Estimated total duration:" in rendered
+    assert list(preview.actions) == apply_human_behaviour(source, profile="precise", wpm=60, typo_rate=0.0, seed=5)
+
+
+def test_preview_uses_the_same_action_schedule_as_execution() -> None:
+    source = [TypeText("The quick brown fox")]
+    preview = build_preview(source, profile="careful", wpm=45, typo_rate=0.05, seed=41)
+    execution_actions = apply_human_behaviour(source, profile="careful", wpm=45, typo_rate=0.05, seed=41)
+
+    assert preview.actions == tuple(execution_actions)

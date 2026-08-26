@@ -21,6 +21,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--countdown", type=float, default=5.0, help="Countdown before typing starts")
     parser.add_argument("--profile", choices=sorted(PROFILES), default="natural", help="Human behaviour profile")
     parser.add_argument("--seed", type=int, help="Seed for deterministic timing variation")
+    parser.add_argument("--typo-rate", type=_typo_rate, default=0.0, help="Typo rate between 0.0 and 0.10")
     parser.add_argument("--dry-run", action="store_true", help="Print planned actions instead of typing")
     parser.add_argument("--pause-key", default="F8", help="Hotkey for pause/resume")
     parser.add_argument("--stop-key", default="F12", help="Hotkey for emergency stop")
@@ -34,6 +35,13 @@ def read_input_text(args: argparse.Namespace) -> str:
     if args.text is not None:
         return args.text
     raise SystemExit("Provide either text or --file.")
+
+
+def _typo_rate(value: str) -> float:
+    rate = float(value)
+    if not 0.0 <= rate <= 0.10:
+        raise argparse.ArgumentTypeError("--typo-rate must be between 0.0 and 0.10")
+    return rate
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -54,6 +62,7 @@ def main(argv: list[str] | None = None) -> int:
                 actions,
                 profile=args.profile,
                 wpm=args.speed,
+                typo_rate=args.typo_rate,
                 seed=args.seed,
             )
         )
@@ -63,6 +72,7 @@ def main(argv: list[str] | None = None) -> int:
         actions,
         profile=args.profile,
         wpm=args.speed,
+        typo_rate=args.typo_rate,
         seed=args.seed,
     )
 

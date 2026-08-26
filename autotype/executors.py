@@ -42,6 +42,16 @@ VK_TAB = 0x09
 VK_SPACE = 0x20
 VK_BACK = 0x08
 VK_ESCAPE = 0x1B
+VK_SHIFT = 0x10
+VK_CONTROL = 0x11
+VK_MENU = 0x12
+VK_LEFT = 0x25
+VK_UP = 0x26
+VK_RIGHT = 0x27
+VK_DOWN = 0x28
+VK_HOME = 0x24
+VK_END = 0x23
+VK_DELETE = 0x2E
 
 _VK_MAP: dict[str, int] = {
     "ENTER": VK_RETURN,
@@ -51,6 +61,21 @@ _VK_MAP: dict[str, int] = {
     "BACKSPACE": VK_BACK,
     "ESC": VK_ESCAPE,
     "ESCAPE": VK_ESCAPE,
+    "LEFT": VK_LEFT,
+    "UP": VK_UP,
+    "RIGHT": VK_RIGHT,
+    "DOWN": VK_DOWN,
+    "HOME": VK_HOME,
+    "END": VK_END,
+    "DELETE": VK_DELETE,
+}
+
+_MODIFIER_KEYS: dict[str, int] = {
+    "SHIFT": VK_SHIFT,
+    "CTRL": VK_CONTROL,
+    "CONTROL": VK_CONTROL,
+    "ALT": VK_MENU,
+    "MENU": VK_MENU,
 }
 
 
@@ -116,7 +141,11 @@ class WindowsExecutor:
                 self._send_unicode_character(character)
 
     def press_key(self, key: str) -> None:
-        vk = _resolve_vk(key)
+        parts = [part.strip() for part in key.split("+") if part.strip()]
+        if len(parts) > 1:
+            self._send_chord(parts)
+            return
+        vk = _resolve_vk(parts[0] if parts else key)
         self._send_vk(vk)
 
     def _send_unicode_character(self, character: str) -> None:
@@ -127,6 +156,18 @@ class WindowsExecutor:
     def _send_vk(self, vk: int) -> None:
         self._send_input(INPUT_KEYBOARD, vk, 0, 0)
         self._send_input(INPUT_KEYBOARD, vk, 0, KEYEVENTF_KEYUP)
+
+    def _send_chord(self, parts: list[str]) -> None:
+        modifiers = [_resolve_modifier_key(part) for part in parts[:-1]]
+        main_key = _resolve_vk(parts[-1])
+
+        for modifier in modifiers:
+            self._send_input(INPUT_KEYBOARD, modifier, 0, 0)
+        try:
+            self._send_vk(main_key)
+        finally:
+            for modifier in reversed(modifiers):
+                self._send_input(INPUT_KEYBOARD, modifier, 0, KEYEVENTF_KEYUP)
 
     def _send_input(self, input_type: int, vk: int, scan: int, flags: int) -> None:
         input_event = INPUT(
@@ -164,3 +205,11 @@ def _resolve_vk(key: str) -> int:
         if 1 <= number <= 24:
             return 0x70 + (number - 1)
     raise ValueError(f"Unsupported key: {key!r}")
+
+
+def _resolve_modifier_key(key: str) -> int:
+    normalized = key.strip().upper()
+    try:
+        return _MODIFIER_KEYS[normalized]
+    except KeyError as exc:
+        raise ValueError(f"Unsupported modifier key: {key!r}") from exc

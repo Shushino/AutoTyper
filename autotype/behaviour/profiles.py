@@ -19,6 +19,8 @@ class BehaviourProfile:
     thinking_pause_probability: float
     thinking_pause_min: float
     thinking_pause_max: float
+    typo_rate_multiplier: float
+    immediate_correction_probability: float
 
     def __post_init__(self) -> None:
         if self.speed_multiplier <= 0:
@@ -37,6 +39,10 @@ class BehaviourProfile:
             raise ValueError("thinking_pause_min must be non-negative")
         if self.thinking_pause_max < self.thinking_pause_min:
             raise ValueError("thinking_pause_max must be at least thinking_pause_min")
+        if self.typo_rate_multiplier <= 0:
+            raise ValueError("typo_rate_multiplier must be positive")
+        if not 0 <= self.immediate_correction_probability <= 1:
+            raise ValueError("immediate_correction_probability must be between 0 and 1")
 
 
 PROFILES: dict[str, BehaviourProfile] = {
@@ -55,6 +61,8 @@ PROFILES: dict[str, BehaviourProfile] = {
         thinking_pause_probability=0.01,
         thinking_pause_min=0.10,
         thinking_pause_max=0.20,
+        typo_rate_multiplier=0.55,
+        immediate_correction_probability=0.90,
     ),
     "natural": BehaviourProfile(
         name="natural",
@@ -71,6 +79,8 @@ PROFILES: dict[str, BehaviourProfile] = {
         thinking_pause_probability=0.04,
         thinking_pause_min=0.18,
         thinking_pause_max=0.50,
+        typo_rate_multiplier=1.0,
+        immediate_correction_probability=0.65,
     ),
     "careful": BehaviourProfile(
         name="careful",
@@ -87,6 +97,8 @@ PROFILES: dict[str, BehaviourProfile] = {
         thinking_pause_probability=0.08,
         thinking_pause_min=0.28,
         thinking_pause_max=0.85,
+        typo_rate_multiplier=1.25,
+        immediate_correction_probability=0.35,
     ),
     "fast": BehaviourProfile(
         name="fast",
@@ -103,6 +115,8 @@ PROFILES: dict[str, BehaviourProfile] = {
         thinking_pause_probability=0.02,
         thinking_pause_min=0.12,
         thinking_pause_max=0.28,
+        typo_rate_multiplier=0.75,
+        immediate_correction_probability=0.70,
     ),
 }
 

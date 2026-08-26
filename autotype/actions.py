@@ -1,3 +1,9 @@
+"""Source-intent action types for AutoType.
+
+These actions describe what the user wants typed, not how timing or execution
+should behave.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -6,6 +12,8 @@ from typing import TypeAlias
 
 @dataclass(frozen=True, slots=True)
 class TypeText:
+    """Emit this text exactly as written."""
+
     text: str
 
     def __post_init__(self) -> None:
@@ -15,6 +23,8 @@ class TypeText:
 
 @dataclass(frozen=True, slots=True)
 class Pause:
+    """Wait for the given duration in seconds."""
+
     seconds: float
 
     def __post_init__(self) -> None:
@@ -24,6 +34,8 @@ class Pause:
 
 @dataclass(frozen=True, slots=True)
 class KeyPress:
+    """Emit a logical key press such as ENTER or F12."""
+
     key: str
 
     def __post_init__(self) -> None:

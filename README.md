@@ -4,7 +4,14 @@ AutoType is a Windows-only Python project for controlled keyboard automation.
 
 ## Current Milestone
 
-Milestone 1 adds a human-behaviour timing layer on top of the Milestone 0 text typer.
+Milestone 2 adds a deterministic typo and correction layer on top of the Milestone 1 human-behaviour timing engine.
+
+Action flow:
+
+- planner creates clean source-intent actions
+- behavior engine first adds deterministic typos and corrections
+- the timing layer expands the resulting source-intent stream into a timed action schedule
+- controller executes the resulting actions in order
 
 What it now does:
 
@@ -12,6 +19,7 @@ What it now does:
 - text-file input
 - typed action model with `TypeText`, `Pause`, and `KeyPress`
 - configurable typing speed
+- configurable typo simulation with deterministic seeds
 - countdown
 - pause and resume
 - emergency stop
@@ -71,6 +79,17 @@ autotype --file text.txt
 - `--profile` chooses the timing profile
 - `--seed` makes the behavior engine deterministic for a given input
 - `--speed` sets the target words per minute
+- `--typo-rate` enables deterministic typo simulation from `0.0` to `0.10`
+
+## Action Streams
+
+AutoType uses three layers:
+
+1. source intent: `TypeText`, `Pause`, and `KeyPress`
+2. behavior expansion: typo/correction simulation plus human-like timing
+3. execution: the controller and executor translate the final schedule into Windows input
+
+Dry-run output shows the final behavior-expanded action stream, so the preview matches what the controller would execute.
 
 ## Tests
 
@@ -85,9 +104,7 @@ Milestone 1 still does not include:
 - DOCX parsing
 - PPTX support
 - formatting
-- typo generation
 - Word-specific automation
-- corrections
 - clipboard automation
 - OCR
 - GUI
@@ -97,4 +114,5 @@ Those belong to future milestones.
 ## Roadmap
 
 1. Milestone 1: human behaviour engine
-2. Future milestones: typo simulation, corrections, document parsing, formatting, and richer application support
+2. Milestone 2: typo and correction engine
+3. Future milestones: document parsing, formatting, and richer application support
