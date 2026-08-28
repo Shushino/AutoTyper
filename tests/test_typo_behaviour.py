@@ -62,6 +62,8 @@ class TextBufferSimulator:
             self._shift_left()
         elif normalized == "CTRL+SHIFT+LEFT":
             self._ctrl_shift_left()
+        elif normalized in {"CTRL+B", "CTRL+I", "CTRL+U"}:
+            return
         else:  # pragma: no cover - defensive guard
             raise ValueError(f"Unsupported simulated key: {key!r}")
 

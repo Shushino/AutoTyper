@@ -7,7 +7,18 @@ from typing import Iterable, Sequence
 from ..actions import Action, KeyPress, Pause, TypeText
 from .profiles import BehaviourProfile, get_profile
 from .timing import character_pause_seconds, estimate_total_duration
-from .typos import apply_typo_behaviour
+from .typos import TypoSummary, _apply_typo_behaviour_with_summary
+
+
+@dataclass(frozen=True, slots=True)
+class DryRunSummary:
+    input_kind: str
+    character_count: int
+    action_count: int
+    typo_injections: int
+    typo_corrections: int
+    formatting_toggles: int
+    estimated_duration: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,6 +28,7 @@ class BehaviourPreview:
     typo_rate: float
     seed: int | None
     actions: tuple[Action, ...]
+    summary: DryRunSummary
     estimated_duration: float
 
 
@@ -29,7 +41,7 @@ def apply_human_behaviour(
 ) -> list[Action]:
     selected_profile = get_profile(profile)
     rng = random.Random(seed)
-    typo_actions = apply_typo_behaviour(actions, selected_profile, typo_rate, rng)
+    typo_actions, _ = _apply_typo_behaviour_with_summary(actions, selected_profile, typo_rate, rng)
     expanded: list[Action] = []
     for action in typo_actions:
         if isinstance(action, TypeText):
@@ -59,16 +71,44 @@ def build_preview(
     wpm: float = 45.0,
     typo_rate: float = 0.0,
     seed: int | None = None,
+    input_kind: str = "plain text",
 ) -> BehaviourPreview:
-    transformed = tuple(apply_human_behaviour(actions, profile=profile, wpm=wpm, typo_rate=typo_rate, seed=seed))
+    source_actions = tuple(actions)
+    display_input_kind = _format_input_kind(input_kind)
+    selected_profile = get_profile(profile)
+    rng = random.Random(seed)
+    typo_actions, typo_summary = _apply_typo_behaviour_with_summary(source_actions, selected_profile, typo_rate, rng)
+    transformed: list[Action] = []
+    for action in typo_actions:
+        if isinstance(action, TypeText):
+            transformed.extend(_expand_text(action.text, selected_profile, wpm, rng))
+        else:
+            transformed.append(action)
+    transformed_tuple = tuple(transformed)
     pauses = [action.seconds for action in transformed if isinstance(action, Pause)]
+    character_count = sum(len(action.text) for action in source_actions if isinstance(action, TypeText))
+    formatting_toggles = sum(
+        1
+        for action in transformed_tuple
+        if isinstance(action, KeyPress) and action.key in {"CTRL+B", "CTRL+I", "CTRL+U"}
+    )
+    summary = DryRunSummary(
+        input_kind=display_input_kind,
+        character_count=character_count,
+        action_count=len(transformed_tuple),
+        typo_injections=typo_summary.injections,
+        typo_corrections=typo_summary.corrections,
+        formatting_toggles=formatting_toggles,
+        estimated_duration=estimate_total_duration(pauses),
+    )
     return BehaviourPreview(
         profile=get_profile(profile).name,
         wpm=wpm,
         typo_rate=typo_rate,
         seed=seed,
-        actions=transformed,
-        estimated_duration=estimate_total_duration(pauses),
+        actions=transformed_tuple,
+        summary=summary,
+        estimated_duration=summary.estimated_duration,
     )
 
 
@@ -78,11 +118,21 @@ def render_dry_run(
     wpm: float = 45.0,
     typo_rate: float = 0.0,
     seed: int | None = None,
+    input_kind: str = "plain text",
     max_action_lines: int = 120,
 ) -> str:
-    preview = build_preview(actions, profile=profile, wpm=wpm, typo_rate=typo_rate, seed=seed)
+    preview = build_preview(actions, profile=profile, wpm=wpm, typo_rate=typo_rate, seed=seed, input_kind=input_kind)
     lines = [
         "[DRY RUN]",
+        "Summary:",
+        f"  Input kind: {preview.summary.input_kind}",
+        f"  Characters: {preview.summary.character_count}",
+        f"  Actions: {preview.summary.action_count}",
+        f"  Typos injected: {preview.summary.typo_injections}",
+        f"  Typos corrected: {preview.summary.typo_corrections}",
+        f"  Formatting toggles: {preview.summary.formatting_toggles}",
+        f"  Estimated duration: {preview.summary.estimated_duration:.3f}s",
+        "",
         f"Profile: {preview.profile}",
         f"Speed: {preview.wpm:g} WPM",
         f"Typo rate: {preview.typo_rate:.3f}",
@@ -109,3 +159,10 @@ def render_dry_run(
     lines.append("")
     lines.append(f"Estimated total duration: {preview.estimated_duration:.3f}s")
     return "\n".join(lines)
+
+
+def _format_input_kind(input_kind: str) -> str:
+    normalized = input_kind.strip().lower()
+    if normalized in {"", "text", "plain text"}:
+        return "plain text"
+    return normalized.upper()

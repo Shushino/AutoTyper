@@ -108,6 +108,13 @@ def test_dry_run_preview_reports_profile_and_duration() -> None:
     preview = build_preview(source, profile="precise", wpm=60, typo_rate=0.0, seed=5)
 
     assert "[DRY RUN]" in rendered
+    assert "Summary:" in rendered
+    assert "Input kind: plain text" in rendered
+    assert "Characters: 2" in rendered
+    assert "Actions: 4" in rendered
+    assert "Typos injected: 0" in rendered
+    assert "Typos corrected: 0" in rendered
+    assert "Formatting toggles: 0" in rendered
     assert "Profile: precise" in rendered
     assert "Speed: 60 WPM" in rendered
     assert "Typo rate: 0.000" in rendered
@@ -115,6 +122,11 @@ def test_dry_run_preview_reports_profile_and_duration() -> None:
     assert "TypeText('H')" in rendered
     assert "Pause(" in rendered
     assert "Estimated total duration:" in rendered
+    assert preview.summary.character_count == 2
+    assert preview.summary.action_count == 4
+    assert preview.summary.typo_injections == 0
+    assert preview.summary.typo_corrections == 0
+    assert preview.summary.formatting_toggles == 0
     assert list(preview.actions) == apply_human_behaviour(source, profile="precise", wpm=60, typo_rate=0.0, seed=5)
 
 
@@ -124,3 +136,34 @@ def test_preview_uses_the_same_action_schedule_as_execution() -> None:
     execution_actions = apply_human_behaviour(source, profile="careful", wpm=45, typo_rate=0.05, seed=41)
 
     assert preview.actions == tuple(execution_actions)
+
+
+def test_preview_keeps_formatting_keypresses_in_the_same_schedule() -> None:
+    source = [
+        KeyPress("CTRL+B"),
+        TypeText("Bold"),
+        KeyPress("CTRL+B"),
+        TypeText(" "),
+        KeyPress("CTRL+I"),
+        TypeText("Italic"),
+        KeyPress("CTRL+I"),
+    ]
+
+    preview = build_preview(source, profile="precise", wpm=60, typo_rate=0.0, seed=9)
+    execution_actions = apply_human_behaviour(source, profile="precise", wpm=60, typo_rate=0.0, seed=9)
+
+    assert preview.actions == tuple(execution_actions)
+    assert any(isinstance(action, KeyPress) and action.key == "CTRL+B" for action in preview.actions)
+    assert any(isinstance(action, KeyPress) and action.key == "CTRL+I" for action in preview.actions)
+
+
+def test_preview_summary_counts_typo_and_formatting_signals() -> None:
+    source = [TypeText("The quick brown fox jumps over the lazy dog " * 6)]
+
+    preview = build_preview(source, profile="careful", wpm=45, typo_rate=0.10, seed=2024)
+
+    assert preview.summary.character_count == len(source[0].text)
+    assert preview.summary.action_count == len(preview.actions)
+    assert preview.summary.typo_injections == preview.summary.typo_corrections
+    assert preview.summary.typo_injections > 0
+    assert preview.summary.formatting_toggles == 0

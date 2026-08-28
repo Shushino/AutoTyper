@@ -46,22 +46,41 @@ class TypoMutation:
     index: int
 
 
+@dataclass(frozen=True, slots=True)
+class TypoSummary:
+    injections: int = 0
+    corrections: int = 0
+
+
 def apply_typo_behaviour(
     actions: Iterable[Action],
     profile: BehaviourProfile,
     typo_rate: float,
     rng: random.Random,
 ) -> list[Action]:
+    transformed, _ = _apply_typo_behaviour_with_summary(actions, profile, typo_rate, rng)
+    return transformed
+
+
+def _apply_typo_behaviour_with_summary(
+    actions: Iterable[Action],
+    profile: BehaviourProfile,
+    typo_rate: float,
+    rng: random.Random,
+) -> tuple[list[Action], TypoSummary]:
     if typo_rate <= 0:
-        return list(actions)
+        return list(actions), TypoSummary()
 
     expanded: list[Action] = []
+    injections = 0
     for action in actions:
         if isinstance(action, TypeText):
-            expanded.extend(_expand_type_text(action.text, profile, typo_rate, rng))
+            typed_actions, mutation_count = _expand_type_text(action.text, profile, typo_rate, rng)
+            expanded.extend(typed_actions)
+            injections += mutation_count
         else:
             expanded.append(action)
-    return expanded
+    return expanded, TypoSummary(injections=injections, corrections=injections)
 
 
 def _expand_type_text(
@@ -69,14 +88,17 @@ def _expand_type_text(
     profile: BehaviourProfile,
     typo_rate: float,
     rng: random.Random,
-) -> list[Action]:
+) -> tuple[list[Action], int]:
     transformed: list[Action] = []
+    injections = 0
     for chunk, is_word in _split_text_chunks(text):
         if not is_word:
             transformed.append(TypeText(chunk))
             continue
-        transformed.extend(_expand_word(chunk, profile, typo_rate, rng))
-    return transformed
+        word_actions, typo_applied = _expand_word(chunk, profile, typo_rate, rng)
+        transformed.extend(word_actions)
+        injections += typo_applied
+    return transformed, injections
 
 
 def _expand_word(
@@ -84,18 +106,18 @@ def _expand_word(
     profile: BehaviourProfile,
     typo_rate: float,
     rng: random.Random,
-) -> list[Action]:
+) -> tuple[list[Action], int]:
     effective_rate = min(0.10, max(0.0, typo_rate) * profile.typo_rate_multiplier)
     if len(word) < 2 or rng.random() >= effective_rate:
-        return [TypeText(word)]
+        return [TypeText(word)], 0
 
     mutation = _choose_typo_mutation(word, rng)
     if mutation is None:
-        return [TypeText(word)]
+        return [TypeText(word)], 0
 
     if rng.random() < profile.immediate_correction_probability:
-        return _build_immediate_correction(mutation)
-    return _build_delayed_correction(mutation)
+        return _build_immediate_correction(mutation), 1
+    return _build_delayed_correction(mutation), 1
 
 
 def _choose_typo_mutation(word: str, rng: random.Random) -> TypoMutation | None:
@@ -229,6 +251,7 @@ build_delayed_correction = _build_delayed_correction
 __all__ = [
     "QWERTY_ADJACENCY",
     "TypoMutation",
+    "TypoSummary",
     "apply_typo_behaviour",
     "build_adjacent_typo",
     "build_delayed_correction",
