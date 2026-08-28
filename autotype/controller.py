@@ -144,17 +144,12 @@ class RunController:
 
     def _type_text(self, text: str) -> int:
         typed = 0
-        for index, character in enumerate(text):
+        for character in text:
             if self._stop_event.is_set():
-                break
-            if self.state == RunState.PAUSED and not self._wait_for_resume():
                 break
 
             self._executor.type_text(character)
             typed += 1
-
-            if index < len(text) - 1 and not self._sleep_with_checks(self._config.seconds_per_character):
-                break
 
         return typed
 

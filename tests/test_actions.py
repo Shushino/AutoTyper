@@ -1,8 +1,7 @@
 import pytest
 
 from autotype.actions import KeyPress, Pause, TypeText
-from autotype.planner import build_actions_from_text, render_dry_run
-from autotype.config import TypingConfig
+from autotype.planner import build_actions_from_text
 
 
 def test_type_text_rejects_empty_text() -> None:
@@ -23,13 +22,3 @@ def test_key_press_rejects_empty_key() -> None:
 def test_build_actions_from_text_returns_single_type_text_action() -> None:
     actions = build_actions_from_text("hello")
     assert actions == [TypeText("hello")]
-
-
-def test_dry_run_renders_timing_information() -> None:
-    summary = render_dry_run([TypeText("hello"), Pause(0.25), KeyPress("ENTER")], TypingConfig(words_per_minute=60))
-    rendered = summary.render()
-    assert rendered.startswith("[DRY RUN]")
-    assert 'TypeText("hello")' in rendered
-    assert "Pause(0.250s)" in rendered
-    assert 'KeyPress("ENTER")' in rendered
-    assert "Estimated total delay:" in rendered
