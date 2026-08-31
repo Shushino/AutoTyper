@@ -4,7 +4,7 @@ AutoType is a Windows-only Python project for controlled keyboard automation.
 
 ## Current Milestone
 
-Milestone 7 adds basic DOCX lists on top of the Milestone 6 polish and usability layer.
+Milestone 8 adds lightweight persistent configuration on top of the Milestone 7 DOCX input layer.
 
 Action flow:
 
@@ -30,6 +30,7 @@ What it now does:
 - dry-run summaries with counts for characters, actions, typos, and formatting toggles
 - clearer live status output
 - optional progress output during live runs
+- persistent user configuration with CLI override support
 - CLI entry point
 - mock executor for tests
 - four behavior profiles: `precise`, `natural`, `careful`, `fast`
@@ -90,6 +91,32 @@ autotype --file text.txt
 - `--typo-rate` enables deterministic typo simulation from `0.0` to `0.10`
 - `--file` reads from an explicit `.txt` or `.docx` file
 - `--progress` shows lightweight live progress during execution
+- `--no-progress` disables live progress explicitly
+- `--config` loads or saves JSON configuration
+- `--show-config` prints the effective configuration and exits
+- `--save-config` writes the effective configuration and exits
+
+## Configuration
+
+AutoTyper reads configuration from `%APPDATA%\AutoTyper\config.json` when present.
+
+Supported persisted settings:
+
+- `profile`
+- `speed`
+- `typo_rate`
+- `countdown`
+- `progress`
+
+Precedence is:
+
+1. explicit CLI value
+2. saved configuration value
+3. built-in default
+
+`--show-config` prints the effective merged configuration.
+`--save-config` validates the effective configuration and writes it back atomically.
+`--config` can point to an alternate JSON file when you want to load or save settings somewhere else.
 
 ## Input Normalization
 
@@ -146,4 +173,5 @@ Those belong to future milestones.
 1. Milestone 1: human behaviour engine
 2. Milestone 2: typo and correction engine
 3. Milestone 7: basic DOCX lists
-4. Future milestones: richer application support and native table or layout handling
+4. Milestone 8: lightweight persistent configuration
+5. Future milestones: richer application support and native table or layout handling

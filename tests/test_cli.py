@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import autotype.cli as cli_module
 from docx import Document
+import pytest
 
 from autotype.cli import build_parser, main
 from autotype.executors import MockExecutor
@@ -80,7 +82,7 @@ def test_parser_accepts_text_and_controls() -> None:
     assert args.seed == 1234
     assert args.typo_rate == 0.05
     assert args.dry_run is True
-    assert args.progress is False
+    assert not hasattr(args, "progress")
     assert args.pause_key == "F7"
     assert args.stop_key == "F11"
 
@@ -92,10 +94,18 @@ def test_parser_help_includes_examples_and_progress_flag() -> None:
     assert "autotype \"Hello world\" --dry-run --seed 1234" in help_text
     assert "autotype --file lists.docx --dry-run --profile natural --seed 1234" in help_text
     assert "autotype --file lists.docx --countdown 5 --progress" in help_text
+    assert "autotype --show-config" in help_text
+    assert "autotype --speed 110 --save-config --config .pytest-tmp/custom_config.json" in help_text
+    assert "--config" in help_text
+    assert "--show-config" in help_text
+    assert "--save-config" in help_text
+    assert "--no-progress" in help_text
     assert "--progress" in help_text
 
 
-def test_dry_run_cli_returns_success(capsys) -> None:
+def test_dry_run_cli_returns_success(monkeypatch, tmp_path: Path, capsys) -> None:
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+
     exit_code = main(
         [
             "hello",
@@ -124,6 +134,92 @@ def test_dry_run_cli_returns_success(capsys) -> None:
     assert "Estimated total duration:" in captured.out
     assert "Summary:" in captured.out
     assert "Input kind: plain text" in captured.out
+
+
+def test_show_config_prints_effective_defaults_and_skips_execution(monkeypatch, tmp_path: Path, capsys) -> None:
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    monkeypatch.setattr(cli_module, "read_input_content", lambda args: pytest.fail("show-config should not read input"))
+
+    exit_code = main(["--show-config"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert json.loads(captured.out) == {
+        "version": 1,
+        "profile": "natural",
+        "speed": 40.0,
+        "typo_rate": 0.0,
+        "countdown": 5.0,
+        "progress": False,
+    }
+
+
+def test_config_values_override_built_in_defaults_and_cli_overrides_config(tmp_path: Path, capsys) -> None:
+    path = tmp_path / "config.json"
+    path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "profile": "careful",
+                "speed": 75,
+                "typo_rate": 0.04,
+                "countdown": 2,
+                "progress": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = main([
+        "--config",
+        str(path),
+        "--speed",
+        "90",
+        "--no-progress",
+        "--show-config",
+    ])
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert json.loads(captured.out) == {
+        "version": 1,
+        "profile": "careful",
+        "speed": 90.0,
+        "typo_rate": 0.04,
+        "countdown": 2.0,
+        "progress": False,
+    }
+
+
+def test_save_config_persists_effective_settings(tmp_path: Path, capsys) -> None:
+    path = tmp_path / "saved.json"
+
+    exit_code = main([
+        "--speed",
+        "110",
+        "--save-config",
+        "--config",
+        str(path),
+    ])
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "Saved configuration to" in captured.out
+    assert json.loads(path.read_text(encoding="utf-8")) == {
+        "version": 1,
+        "profile": "natural",
+        "speed": 110.0,
+        "typo_rate": 0.0,
+        "countdown": 5.0,
+        "progress": False,
+    }
+
+
+def test_missing_explicit_config_fails(tmp_path: Path) -> None:
+    missing = tmp_path / "missing.json"
+
+    with pytest.raises(SystemExit, match="Configuration file does not exist"):
+        main(["--config", str(missing), "--show-config"])
 
 
 def test_dry_run_cli_reports_docx_summary_and_formatting(tmp_path: Path, capsys) -> None:

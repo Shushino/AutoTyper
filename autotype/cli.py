@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import time
 from dataclasses import dataclass, field
@@ -10,7 +11,16 @@ from typing import Callable, Sequence
 from .actions import Action, TypeText
 from .behaviour import apply_human_behaviour, render_dry_run
 from .behaviour.profiles import PROFILES
-from .config import HotkeyConfig, TypingConfig
+from .config import (
+    AppSettings,
+    ConfigError,
+    DEFAULT_SETTINGS,
+    HotkeyConfig,
+    TypingConfig,
+    default_config_path,
+    load_settings,
+    save_settings,
+)
 from .controller import RunController, RunState
 from .executors import WindowsExecutor
 from .hotkeys import WindowsHotkeyMonitor
@@ -24,6 +34,8 @@ CLI_EPILOG = """Examples:
   autotype --file sample.docx --dry-run --profile natural --seed 1234
   autotype --file lists.docx --dry-run --profile natural --seed 1234
   autotype --file lists.docx --countdown 5 --progress
+  autotype --show-config
+  autotype --speed 110 --save-config --config .pytest-tmp/custom_config.json
 
 Hotkeys during live runs:
   F8 toggles pause and resume
@@ -40,13 +52,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("text", nargs="?", help="Text to type or an existing .txt/.docx file path")
     parser.add_argument("--file", type=Path, help="Read text from a .txt or .docx file with DOCX normalization")
-    parser.add_argument("--speed", type=float, default=40.0, help="Typing speed in words per minute")
-    parser.add_argument("--countdown", type=float, default=5.0, help="Countdown before typing starts")
-    parser.add_argument("--profile", choices=sorted(PROFILES), default="natural", help="Human behaviour profile")
+    parser.add_argument("--config", type=Path, default=argparse.SUPPRESS, help="Read and write settings from a JSON config file")
+    parser.add_argument("--speed", type=float, default=argparse.SUPPRESS, help="Typing speed in words per minute")
+    parser.add_argument("--countdown", type=float, default=argparse.SUPPRESS, help="Countdown before typing starts")
+    parser.add_argument("--profile", choices=sorted(PROFILES), default=argparse.SUPPRESS, help="Human behaviour profile")
     parser.add_argument("--seed", type=int, help="Seed for deterministic timing variation")
-    parser.add_argument("--typo-rate", type=_typo_rate, default=0.0, help="Typo rate between 0.0 and 0.10")
+    parser.add_argument("--typo-rate", type=_typo_rate, default=argparse.SUPPRESS, help="Typo rate between 0.0 and 0.10")
     parser.add_argument("--dry-run", action="store_true", help="Print planned actions instead of typing")
-    parser.add_argument("--progress", action="store_true", help="Show live progress while typing")
+    progress_group = parser.add_mutually_exclusive_group()
+    progress_group.add_argument("--progress", dest="progress", action="store_true", default=argparse.SUPPRESS, help="Show live progress while typing")
+    progress_group.add_argument("--no-progress", dest="progress", action="store_false", default=argparse.SUPPRESS, help="Disable live progress while typing")
+    parser.add_argument("--show-config", action="store_true", help="Print the effective configuration and exit")
+    parser.add_argument("--save-config", action="store_true", help="Save the effective configuration and exit")
     parser.add_argument("--pause-key", default="F8", help="Hotkey for pause/resume")
     parser.add_argument("--stop-key", default="F12", help="Hotkey for emergency stop")
     parser.add_argument("--poll-interval", type=float, default=0.05, help="Hotkey polling interval in seconds")
@@ -72,6 +89,44 @@ def _typo_rate(value: str) -> float:
     if not 0.0 <= rate <= 0.10:
         raise argparse.ArgumentTypeError("--typo-rate must be between 0.0 and 0.10")
     return rate
+
+
+def _settings_from_namespace(args: argparse.Namespace, base: AppSettings) -> AppSettings:
+    overrides: dict[str, object] = {}
+    for field_name in ("profile", "speed", "typo_rate", "countdown", "progress"):
+        if hasattr(args, field_name):
+            overrides[field_name] = getattr(args, field_name)
+    if not overrides:
+        return base
+    return base.with_overrides(**overrides)
+
+
+def _load_configured_settings(args: argparse.Namespace) -> tuple[AppSettings, Path | None]:
+    explicit_config = getattr(args, "config", None)
+    if explicit_config is not None:
+        loaded = load_settings(explicit_config, allow_missing=args.save_config)
+        if loaded is None:
+            return DEFAULT_SETTINGS, explicit_config.expanduser()
+        return loaded, explicit_config.expanduser()
+
+    try:
+        config_path = default_config_path()
+    except ConfigError:
+        return DEFAULT_SETTINGS, None
+
+    loaded = load_settings(config_path, allow_missing=True)
+    if loaded is None:
+        return DEFAULT_SETTINGS, config_path
+    return loaded, config_path
+
+
+def _effective_settings(args: argparse.Namespace) -> tuple[AppSettings, Path | None]:
+    base_settings, config_path = _load_configured_settings(args)
+    return _settings_from_namespace(args, base_settings), config_path
+
+
+def _print_effective_config(settings: AppSettings) -> None:
+    print(json.dumps(settings.to_json_dict(), indent=2, sort_keys=True))
 
 
 def _format_live_status(state: RunState, message: str) -> str:
@@ -175,10 +230,29 @@ class ProgressTracker:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    try:
+        settings, config_path = _effective_settings(args)
+
+        if args.save_config:
+            target_path = getattr(args, "config", None)
+            if target_path is None:
+                target_path = config_path or default_config_path()
+            save_settings(target_path, settings)
+            print(f"Saved configuration to {target_path.expanduser()}")
+
+        if args.show_config:
+            _print_effective_config(settings)
+            return 0
+
+        if args.save_config:
+            return 0
+    except ConfigError as exc:
+        raise SystemExit(str(exc)) from exc
+
     content = read_input_content(args)
     typing_config = TypingConfig(
-        words_per_minute=args.speed,
-        countdown_seconds=args.countdown,
+        words_per_minute=settings.speed,
+        countdown_seconds=settings.countdown,
         poll_interval_seconds=args.poll_interval,
     )
     hotkey_config = HotkeyConfig(pause_key=args.pause_key, stop_key=args.stop_key)
@@ -188,9 +262,9 @@ def main(argv: list[str] | None = None) -> int:
         print(
             render_dry_run(
                 actions,
-                profile=args.profile,
-                wpm=args.speed,
-                typo_rate=args.typo_rate,
+                profile=settings.profile,
+                wpm=settings.speed,
+                typo_rate=settings.typo_rate,
                 seed=args.seed,
                 input_kind=content.source_kind,
             )
@@ -199,9 +273,9 @@ def main(argv: list[str] | None = None) -> int:
 
     behavioural_actions = apply_human_behaviour(
         actions,
-        profile=args.profile,
-        wpm=args.speed,
-        typo_rate=args.typo_rate,
+        profile=settings.profile,
+        wpm=settings.speed,
+        typo_rate=settings.typo_rate,
         seed=args.seed,
     )
 
@@ -219,7 +293,7 @@ def main(argv: list[str] | None = None) -> int:
         stop_key=hotkey_config.stop_key,
         poll_interval_seconds=typing_config.poll_interval_seconds,
     )
-    progress_tracker = ProgressTracker(actions=behavioural_actions, enabled=args.progress)
+    progress_tracker = ProgressTracker(actions=behavioural_actions, enabled=settings.progress)
 
     monitor.start()
     try:
