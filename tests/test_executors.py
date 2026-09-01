@@ -13,6 +13,7 @@ from autotype.executors import (
     KEYEVENTF_UNICODE,
     MOUSEINPUT,
     WindowsExecutor,
+    VK_OEM_MINUS,
     VK_OEM_PLUS,
     _resolve_vk,
 )
@@ -67,3 +68,8 @@ def test_press_key_supports_chords(monkeypatch) -> None:
 def test_equals_key_alias_resolves_to_oem_plus() -> None:
     assert VK_OEM_PLUS == 0xBB
     assert _resolve_vk("EQUALS") == VK_OEM_PLUS
+
+
+def test_minus_key_alias_resolves_to_oem_minus() -> None:
+    assert VK_OEM_MINUS == 0xBD
+    assert _resolve_vk("MINUS") == VK_OEM_MINUS

@@ -370,9 +370,9 @@ def test_docx_extended_direct_formatting_is_extracted_and_emitted(tmp_path: Path
         KeyPress("CTRL+SHIFT+EQUALS"),
         TypeText(" Super"),
         KeyPress("CTRL+SHIFT+EQUALS"),
-        KeyPress("CTRL+EQUALS"),
+        KeyPress("CTRL+SHIFT+MINUS"),
         TypeText(" Sub"),
-        KeyPress("CTRL+EQUALS"),
+        KeyPress("CTRL+SHIFT+MINUS"),
     ]
 
 
@@ -384,7 +384,7 @@ def test_docx_extended_formatting_works_in_lists_and_tables(tmp_path: Path) -> N
     actions = content.to_actions()
 
     assert KeyPress("CTRL+SHIFT+A") in actions
-    assert KeyPress("CTRL+EQUALS") in actions
+    assert KeyPress("CTRL+SHIFT+MINUS") in actions
     assert content.blocks[1].text == "\uf0b7 List"
     assert content.blocks[2].rows[0][0].text == "Cell"
 

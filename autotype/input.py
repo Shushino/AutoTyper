@@ -550,7 +550,7 @@ def _emit_style_transition(actions: list[Action], current: _StyleState, desired:
         return current
 
     for key, active_current, active_desired in (
-        ("CTRL+EQUALS", current.subscript, desired.subscript),
+        ("CTRL+SHIFT+MINUS", current.subscript, desired.subscript),
         ("CTRL+SHIFT+EQUALS", current.superscript, desired.superscript),
         ("CTRL+SHIFT+K", current.small_caps, desired.small_caps),
         ("CTRL+SHIFT+A", current.all_caps, desired.all_caps),
@@ -568,7 +568,7 @@ def _emit_style_transition(actions: list[Action], current: _StyleState, desired:
         ("CTRL+SHIFT+A", current.all_caps, desired.all_caps),
         ("CTRL+SHIFT+K", current.small_caps, desired.small_caps),
         ("CTRL+SHIFT+EQUALS", current.superscript, desired.superscript),
-        ("CTRL+EQUALS", current.subscript, desired.subscript),
+        ("CTRL+SHIFT+MINUS", current.subscript, desired.subscript),
     ):
         if not active_current and active_desired:
             actions.append(KeyPress(key))

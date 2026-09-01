@@ -137,7 +137,7 @@ AutoType uses three layers:
 3. execution: the controller and executor translate the final schedule into Windows input
 
 Dry-run output shows the final behavior-expanded action stream, so the preview matches what the controller would execute.
-For DOCX files, formatting toggles appear as `KeyPress('CTRL+B')`, `KeyPress('CTRL+I')`, `KeyPress('CTRL+U')`, `KeyPress('CTRL+SHIFT+A')`, `KeyPress('CTRL+SHIFT+K')`, `KeyPress('CTRL+SHIFT+EQUALS')`, and `KeyPress('CTRL+EQUALS')` around the formatted spans.
+For DOCX files, formatting toggles appear as `KeyPress('CTRL+B')`, `KeyPress('CTRL+I')`, `KeyPress('CTRL+U')`, `KeyPress('CTRL+SHIFT+A')`, `KeyPress('CTRL+SHIFT+K')`, `KeyPress('CTRL+SHIFT+EQUALS')`, and `KeyPress('CTRL+SHIFT+MINUS')` around the formatted spans.
 The dry-run summary also shows the input kind, character count, action count, typo counts, formatting toggle count, and estimated duration.
 
 ## Live Output
@@ -166,7 +166,7 @@ Direct run-level support is limited to the formatting effects listed above. Full
 - full Word style inheritance
 - strikethrough, highlighting, font name, font size, font colour, underline variants, and other font effects
 
-Formatting shortcuts target desktop Word on Windows, require the target document to have focus, and may vary with Word version or keyboard layout. The `EQUALS` action represents the Windows `VK_OEM_PLUS` key for the superscript and subscript shortcuts.
+Formatting shortcuts target desktop Word on Windows, require the target document to have focus, and may vary with Word version or keyboard layout. The `EQUALS` action represents the Windows `VK_OEM_PLUS` key for superscript, and `MINUS` represents `VK_OEM_MINUS` for subscript.
 
 Those belong to future milestones.
 

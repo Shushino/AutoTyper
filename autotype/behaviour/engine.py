@@ -99,7 +99,7 @@ def build_preview(
             "CTRL+SHIFT+A",
             "CTRL+SHIFT+K",
             "CTRL+SHIFT+EQUALS",
-            "CTRL+EQUALS",
+            "CTRL+SHIFT+MINUS",
         }
     )
     summary = DryRunSummary(

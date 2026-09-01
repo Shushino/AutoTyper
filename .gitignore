@@ -32,3 +32,13 @@ Thumbs.db
 
 # AutoType local test files
 test.txt
+# Pytest temp dirs (basetemp / local runs)
+.pytest-tmp/
+.pytest_cache/
+
+# Packaging
+*.egg-info/
+autotype.egg-info/
+
+# Local scratch
+*.log

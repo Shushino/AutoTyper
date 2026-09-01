@@ -168,9 +168,9 @@ def test_extended_formatting_preserves_parity_integrity_and_determinism() -> Non
         KeyPress("CTRL+SHIFT+EQUALS"),
         TypeText("Super"),
         KeyPress("CTRL+SHIFT+EQUALS"),
-        KeyPress("CTRL+EQUALS"),
+        KeyPress("CTRL+SHIFT+MINUS"),
         TypeText("Sub"),
-        KeyPress("CTRL+EQUALS"),
+        KeyPress("CTRL+SHIFT+MINUS"),
     ]
 
     preview = build_preview(source, profile="natural", wpm=45, typo_rate=0.05, seed=123)

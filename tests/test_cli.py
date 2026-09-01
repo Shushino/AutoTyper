@@ -274,7 +274,7 @@ def test_dry_run_cli_reports_extended_formatting(tmp_path: Path, capsys) -> None
     assert "KeyPress('CTRL+SHIFT+A')" in captured.out
     assert "KeyPress('CTRL+SHIFT+K')" in captured.out
     assert "KeyPress('CTRL+SHIFT+EQUALS')" in captured.out
-    assert "KeyPress('CTRL+EQUALS')" in captured.out
+    assert "KeyPress('CTRL+SHIFT+MINUS')" in captured.out
 
 
 def test_dry_run_cli_accepts_table_docx_positional_input(tmp_path: Path, capsys) -> None:
