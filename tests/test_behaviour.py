@@ -157,6 +157,32 @@ def test_preview_keeps_formatting_keypresses_in_the_same_schedule() -> None:
     assert any(isinstance(action, KeyPress) and action.key == "CTRL+I" for action in preview.actions)
 
 
+def test_extended_formatting_preserves_parity_integrity_and_determinism() -> None:
+    source = [
+        KeyPress("CTRL+SHIFT+A"),
+        TypeText("Caps"),
+        KeyPress("CTRL+SHIFT+A"),
+        KeyPress("CTRL+SHIFT+K"),
+        TypeText("Small"),
+        KeyPress("CTRL+SHIFT+K"),
+        KeyPress("CTRL+SHIFT+EQUALS"),
+        TypeText("Super"),
+        KeyPress("CTRL+SHIFT+EQUALS"),
+        KeyPress("CTRL+EQUALS"),
+        TypeText("Sub"),
+        KeyPress("CTRL+EQUALS"),
+    ]
+
+    preview = build_preview(source, profile="natural", wpm=45, typo_rate=0.05, seed=123)
+    execution = apply_human_behaviour(source, profile="natural", wpm=45, typo_rate=0.05, seed=123)
+    repeat = apply_human_behaviour(source, profile="natural", wpm=45, typo_rate=0.05, seed=123)
+
+    assert preview.actions == tuple(execution)
+    assert execution == repeat
+    assert _extract_typed_text(execution) == "CapsSmallSuperSub"
+    assert preview.summary.formatting_toggles == 8
+
+
 def test_preview_summary_counts_typo_and_formatting_signals() -> None:
     source = [TypeText("The quick brown fox jumps over the lazy dog " * 6)]
 

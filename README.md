@@ -4,7 +4,7 @@ AutoType is a Windows-only Python project for controlled keyboard automation.
 
 ## Current Milestone
 
-Milestone 8 adds lightweight persistent configuration on top of the Milestone 7 DOCX input layer.
+Milestone 9 adds direct DOCX character-formatting fidelity on top of the Milestone 8 configuration and Milestone 7 DOCX input layers.
 
 Action flow:
 
@@ -19,7 +19,7 @@ What it now does:
 - `.txt` and `.docx` input
 - DOCX paragraph and basic table extraction
 - DOCX bulleted and numbered list normalization
-- direct DOCX run formatting for bold, italic, and underline
+- direct DOCX run formatting for bold, italic, underline, all caps, small caps, superscript, and subscript
 - typed action model with `TypeText`, `Pause`, and `KeyPress`
 - configurable typing speed
 - configurable typo simulation with deterministic seeds
@@ -124,7 +124,7 @@ Precedence is:
 - Existing `.txt` and `.docx` paths passed positionally are treated as files.
 - DOCX paragraphs and basic tables are normalized into canonical text using newline and tab separators.
 - DOCX bulleted and numbered lists are normalized into canonical typed prefixes with consistent indentation.
-- Direct DOCX run formatting is preserved in the action stream using existing `KeyPress` toggles.
+- Direct DOCX run formatting is preserved in the action stream using existing `KeyPress` toggles. Supported effects are bold, italic, underline, all caps, small caps, superscript, and subscript.
 - Blank paragraphs become empty lines in the normalized content stream.
 - Images, headers, footers, and full style inheritance are still ignored.
 
@@ -137,7 +137,7 @@ AutoType uses three layers:
 3. execution: the controller and executor translate the final schedule into Windows input
 
 Dry-run output shows the final behavior-expanded action stream, so the preview matches what the controller would execute.
-For DOCX files, formatting toggles appear as `KeyPress('CTRL+B')`, `KeyPress('CTRL+I')`, and `KeyPress('CTRL+U')` around the formatted spans.
+For DOCX files, formatting toggles appear as `KeyPress('CTRL+B')`, `KeyPress('CTRL+I')`, `KeyPress('CTRL+U')`, `KeyPress('CTRL+SHIFT+A')`, `KeyPress('CTRL+SHIFT+K')`, `KeyPress('CTRL+SHIFT+EQUALS')`, and `KeyPress('CTRL+EQUALS')` around the formatted spans.
 The dry-run summary also shows the input kind, character count, action count, typo counts, formatting toggle count, and estimated duration.
 
 ## Live Output
@@ -156,15 +156,17 @@ pytest
 
 ## Limitations
 
-Milestone 6 still does not include:
+Direct run-level support is limited to the formatting effects listed above. Full style inheritance and parameterized font properties are not included:
 
 - PPTX support
-- formatting
 - Word-specific automation
 - clipboard automation
 - OCR
 - GUI
 - full Word style inheritance
+- strikethrough, highlighting, font name, font size, font colour, underline variants, and other font effects
+
+Formatting shortcuts target desktop Word on Windows, require the target document to have focus, and may vary with Word version or keyboard layout. The `EQUALS` action represents the Windows `VK_OEM_PLUS` key for the superscript and subscript shortcuts.
 
 Those belong to future milestones.
 
@@ -174,4 +176,5 @@ Those belong to future milestones.
 2. Milestone 2: typo and correction engine
 3. Milestone 7: basic DOCX lists
 4. Milestone 8: lightweight persistent configuration
-5. Future milestones: richer application support and native table or layout handling
+5. Milestone 9: direct DOCX character formatting expansion
+6. Future milestones: richer application support and native table or layout handling

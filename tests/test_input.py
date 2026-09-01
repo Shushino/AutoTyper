@@ -10,6 +10,7 @@ from docx.oxml.ns import qn
 from autotype.actions import KeyPress, TypeText
 from autotype.input import (
     CellBlock,
+    DocumentContent,
     InputError,
     ParagraphBlock,
     TableBlock,
@@ -152,6 +153,41 @@ def _write_list_formatting_docx(path: Path) -> None:
     document.save(path)
 
 
+def _write_extended_formatting_docx(path: Path) -> None:
+    document = Document()
+    paragraph = document.add_paragraph()
+    all_caps = paragraph.add_run("Caps")
+    all_caps.font.all_caps = True
+    small_caps = paragraph.add_run(" Small")
+    small_caps.font.small_caps = True
+    superscript = paragraph.add_run(" Super")
+    superscript.font.superscript = True
+    subscript = paragraph.add_run(" Sub")
+    subscript.font.subscript = True
+
+    list_paragraph = document.add_paragraph(style="List Bullet")
+    list_run = list_paragraph.add_run("List")
+    list_run.font.all_caps = True
+
+    table = document.add_table(rows=1, cols=1)
+    cell_paragraph = table.cell(0, 0).paragraphs[0]
+    cell_run = cell_paragraph.add_run("Cell")
+    cell_run.font.subscript = True
+
+    document.save(path)
+
+
+def _write_conflicting_vertical_alignment_docx(path: Path) -> None:
+    document = Document()
+    run = document.add_paragraph().add_run("Conflict")
+    rPr = run._r.get_or_add_rPr()
+    for value in ("superscript", "subscript"):
+        vert_align = OxmlElement("w:vertAlign")
+        vert_align.set(qn("w:val"), value)
+        rPr.append(vert_align)
+    document.save(path)
+
+
 def test_plain_text_normalizes_line_endings() -> None:
     content = load_input_content("Hello\r\nworld", None)
 
@@ -276,6 +312,89 @@ def test_docx_list_items_preserve_inline_formatting_in_actions(tmp_path: Path) -
         TypeText(" Underline"),
         KeyPress("CTRL+U"),
     ]
+
+
+def test_docx_extended_direct_formatting_is_extracted_and_emitted(tmp_path: Path) -> None:
+    path = tmp_path / "extended-formatting.docx"
+    _write_extended_formatting_docx(path)
+
+    content = load_input_content(None, path)
+    paragraph = content.blocks[0]
+    assert isinstance(paragraph, ParagraphBlock)
+    assert paragraph.runs == (
+        TextRun("Caps", all_caps=True),
+        TextRun(" Small", small_caps=True),
+        TextRun(" Super", superscript=True),
+        TextRun(" Sub", subscript=True),
+    )
+    assert content.has_formatting is True
+    assert content.to_actions()[:12] == [
+        KeyPress("CTRL+SHIFT+A"),
+        TypeText("Caps"),
+        KeyPress("CTRL+SHIFT+A"),
+        KeyPress("CTRL+SHIFT+K"),
+        TypeText(" Small"),
+        KeyPress("CTRL+SHIFT+K"),
+        KeyPress("CTRL+SHIFT+EQUALS"),
+        TypeText(" Super"),
+        KeyPress("CTRL+SHIFT+EQUALS"),
+        KeyPress("CTRL+EQUALS"),
+        TypeText(" Sub"),
+        KeyPress("CTRL+EQUALS"),
+    ]
+
+
+def test_docx_extended_formatting_works_in_lists_and_tables(tmp_path: Path) -> None:
+    path = tmp_path / "extended-block-formatting.docx"
+    _write_extended_formatting_docx(path)
+
+    content = load_input_content(None, path)
+    actions = content.to_actions()
+
+    assert KeyPress("CTRL+SHIFT+A") in actions
+    assert KeyPress("CTRL+EQUALS") in actions
+    assert content.blocks[1].text == "\uf0b7 List"
+    assert content.blocks[2].rows[0][0].text == "Cell"
+
+
+def test_docx_rejects_conflicting_vertical_alignment(tmp_path: Path) -> None:
+    path = tmp_path / "conflicting-formatting.docx"
+    _write_conflicting_vertical_alignment_docx(path)
+
+    with pytest.raises(InputError, match="both superscript and subscript"):
+        load_input_content(None, path)
+
+
+def test_docx_formatting_resets_at_block_boundaries(tmp_path: Path) -> None:
+    path = tmp_path / "boundary-formatting.docx"
+    document = Document()
+    first = document.add_paragraph()
+    first_run = first.add_run("First")
+    first_run.font.superscript = True
+    second = document.add_paragraph()
+    second_run = second.add_run("Second")
+    second_run.font.all_caps = True
+    document.save(path)
+
+    content = load_input_content(None, path)
+
+    assert content.to_actions() == [
+        KeyPress("CTRL+SHIFT+EQUALS"),
+        TypeText("First"),
+        KeyPress("CTRL+SHIFT+EQUALS"),
+        TypeText("\n"),
+        KeyPress("CTRL+SHIFT+A"),
+        TypeText("Second"),
+        KeyPress("CTRL+SHIFT+A"),
+    ]
+
+
+@pytest.mark.parametrize("field_name", ["all_caps", "small_caps", "superscript", "subscript"])
+def test_extended_formatting_counts_as_formatting(field_name: str) -> None:
+    run = TextRun("x", **{field_name: True})
+    content = DocumentContent((ParagraphBlock((run,)),), source_kind="docx")
+
+    assert content.has_formatting is True
 
 
 def test_docx_empty_document_normalizes_to_empty_text(tmp_path: Path) -> None:

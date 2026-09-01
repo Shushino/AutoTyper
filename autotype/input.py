@@ -30,6 +30,10 @@ class TextRun:
     bold: bool = False
     italic: bool = False
     underline: bool = False
+    all_caps: bool = False
+    small_caps: bool = False
+    superscript: bool = False
+    subscript: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,13 +93,13 @@ class DocumentContent:
             return False
         for block in self.blocks:
             if isinstance(block, ParagraphBlock):
-                if any(run.bold or run.italic or run.underline for run in block.runs):
+                if any(_run_has_formatting(run) for run in block.runs):
                     return True
             elif isinstance(block, TableBlock):
                 for row in block.rows:
                     for cell in row:
                         for paragraph in cell.paragraphs:
-                            if any(run.bold or run.italic or run.underline for run in paragraph.runs):
+                            if any(_run_has_formatting(run) for run in paragraph.runs):
                                 return True
         return False
 
@@ -198,12 +202,34 @@ def _iter_docx_blocks(document: DocxDocument) -> Iterator[DocumentBlock]:
 
 def _iter_paragraph_runs(paragraph: Paragraph) -> Iterator[TextRun]:
     for run in paragraph.runs:
+        font = run.font
+        superscript, subscript = _direct_vertical_alignment(run)
         yield TextRun(
             text=_normalize_line_endings(run.text or ""),
             bold=bool(run.bold),
             italic=bool(run.italic),
             underline=bool(run.underline),
+            all_caps=font.all_caps is True,
+            small_caps=font.small_caps is True,
+            superscript=superscript,
+            subscript=subscript,
         )
+
+
+def _direct_vertical_alignment(run) -> tuple[bool, bool]:
+    rPr = run._r.rPr
+    values = set()
+    if rPr is not None:
+        values = {
+            element.get(qn("w:val"))
+            for element in rPr.findall("w:vertAlign", NS)
+        }
+
+    superscript = "superscript" in values
+    subscript = "subscript" in values
+    if superscript and subscript:
+        raise InputError("DOCX run cannot be both superscript and subscript")
+    return superscript, subscript
 
 
 def _iter_cell_block(cell, list_resolver: "_DocxListResolver") -> CellBlock:
@@ -467,6 +493,10 @@ class _StyleState:
     bold: bool = False
     italic: bool = False
     underline: bool = False
+    all_caps: bool = False
+    small_caps: bool = False
+    superscript: bool = False
+    subscript: bool = False
 
 
 def _emit_paragraph_actions(actions: list[Action], paragraph: ParagraphBlock, current_style: _StyleState) -> _StyleState:
@@ -474,7 +504,19 @@ def _emit_paragraph_actions(actions: list[Action], paragraph: ParagraphBlock, cu
         current_style = _emit_style_transition(actions, current_style, _StyleState())
         actions.append(TypeText(paragraph.prefix))
     for run in paragraph.runs:
-        current_style = _emit_style_transition(actions, current_style, _StyleState(run.bold, run.italic, run.underline))
+        current_style = _emit_style_transition(
+            actions,
+            current_style,
+            _StyleState(
+                bold=run.bold,
+                italic=run.italic,
+                underline=run.underline,
+                all_caps=run.all_caps,
+                small_caps=run.small_caps,
+                superscript=run.superscript,
+                subscript=run.subscript,
+            ),
+        )
         if run.text:
             actions.append(TypeText(run.text))
     return current_style
@@ -504,6 +546,10 @@ def _emit_style_transition(actions: list[Action], current: _StyleState, desired:
         return current
 
     for key, active_current, active_desired in (
+        ("CTRL+EQUALS", current.subscript, desired.subscript),
+        ("CTRL+SHIFT+EQUALS", current.superscript, desired.superscript),
+        ("CTRL+SHIFT+K", current.small_caps, desired.small_caps),
+        ("CTRL+SHIFT+A", current.all_caps, desired.all_caps),
         ("CTRL+U", current.underline, desired.underline),
         ("CTRL+I", current.italic, desired.italic),
         ("CTRL+B", current.bold, desired.bold),
@@ -515,6 +561,10 @@ def _emit_style_transition(actions: list[Action], current: _StyleState, desired:
         ("CTRL+B", current.bold, desired.bold),
         ("CTRL+I", current.italic, desired.italic),
         ("CTRL+U", current.underline, desired.underline),
+        ("CTRL+SHIFT+A", current.all_caps, desired.all_caps),
+        ("CTRL+SHIFT+K", current.small_caps, desired.small_caps),
+        ("CTRL+SHIFT+EQUALS", current.superscript, desired.superscript),
+        ("CTRL+EQUALS", current.subscript, desired.subscript),
     ):
         if not active_current and active_desired:
             actions.append(KeyPress(key))
@@ -530,3 +580,17 @@ def _style_close_actions(style: _StyleState) -> list[Action]:
 
 def _normalize_line_endings(text: str) -> str:
     return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _run_has_formatting(run: TextRun) -> bool:
+    return any(
+        (
+            run.bold,
+            run.italic,
+            run.underline,
+            run.all_caps,
+            run.small_caps,
+            run.superscript,
+            run.subscript,
+        )
+    )

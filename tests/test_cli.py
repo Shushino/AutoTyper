@@ -252,6 +252,31 @@ def test_dry_run_cli_reports_docx_list_prefixes(tmp_path: Path, capsys) -> None:
     assert "TypeText('.')" in captured.out
 
 
+def test_dry_run_cli_reports_extended_formatting(tmp_path: Path, capsys) -> None:
+    path = tmp_path / "extended-formatting.docx"
+    document = Document()
+    paragraph = document.add_paragraph()
+    for text, attribute in (
+        ("Caps", "all_caps"),
+        ("Small", "small_caps"),
+        ("Super", "superscript"),
+        ("Sub", "subscript"),
+    ):
+        run = paragraph.add_run(text)
+        setattr(run.font, attribute, True)
+    document.save(path)
+
+    exit_code = main(["--file", str(path), "--dry-run", "--speed", "60", "--countdown", "0", "--profile", "precise", "--seed", "7"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "Formatting toggles: 8" in captured.out
+    assert "KeyPress('CTRL+SHIFT+A')" in captured.out
+    assert "KeyPress('CTRL+SHIFT+K')" in captured.out
+    assert "KeyPress('CTRL+SHIFT+EQUALS')" in captured.out
+    assert "KeyPress('CTRL+EQUALS')" in captured.out
+
+
 def test_dry_run_cli_accepts_table_docx_positional_input(tmp_path: Path, capsys) -> None:
     path = tmp_path / "sample.docx"
     _write_table_docx(path)

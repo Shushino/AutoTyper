@@ -52,6 +52,7 @@ VK_DOWN = 0x28
 VK_HOME = 0x24
 VK_END = 0x23
 VK_DELETE = 0x2E
+VK_OEM_PLUS = 0xBB
 
 _VK_MAP: dict[str, int] = {
     "ENTER": VK_RETURN,
@@ -68,6 +69,7 @@ _VK_MAP: dict[str, int] = {
     "HOME": VK_HOME,
     "END": VK_END,
     "DELETE": VK_DELETE,
+    "EQUALS": VK_OEM_PLUS,
 }
 
 _MODIFIER_KEYS: dict[str, int] = {

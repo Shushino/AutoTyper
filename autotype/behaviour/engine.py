@@ -90,7 +90,17 @@ def build_preview(
     formatting_toggles = sum(
         1
         for action in transformed_tuple
-        if isinstance(action, KeyPress) and action.key in {"CTRL+B", "CTRL+I", "CTRL+U"}
+        if isinstance(action, KeyPress)
+        and action.key
+        in {
+            "CTRL+B",
+            "CTRL+I",
+            "CTRL+U",
+            "CTRL+SHIFT+A",
+            "CTRL+SHIFT+K",
+            "CTRL+SHIFT+EQUALS",
+            "CTRL+EQUALS",
+        }
     )
     summary = DryRunSummary(
         input_kind=display_input_kind,
