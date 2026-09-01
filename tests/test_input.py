@@ -139,6 +139,44 @@ def _write_order_mixed_docx(path: Path) -> None:
     document.save(path)
 
 
+def _write_nested_bullet_docx(path: Path) -> None:
+    document = Document()
+    bullet_num_id = _numbering_num_ids(document, "bullet")[0]
+
+    parent = document.add_paragraph("Parent")
+    _set_numbering(parent, bullet_num_id, 0)
+    child = document.add_paragraph("Child")
+    _set_numbering(child, bullet_num_id, 1)
+
+    document.save(path)
+
+
+def _write_custom_bullet_docx(path: Path, label: str) -> None:
+    document = Document()
+    bullet_num_id = _numbering_num_ids(document, "bullet")[0]
+    root = document.part.numbering_part.numbering_definitions._numbering
+    ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+    abstract_id = next(
+        int(num.find("w:abstractNumId", ns).get(qn("w:val")))
+        for num in root.findall("w:num", ns)
+        if int(num.get(qn("w:numId"))) == bullet_num_id
+    )
+    abstract = root.find(
+        f"w:abstractNum[@w:abstractNumId='{abstract_id}']",
+        ns,
+    )
+    assert abstract is not None
+    level = abstract.find("w:lvl", ns)
+    assert level is not None
+    lvl_text = level.find("w:lvlText", ns)
+    assert lvl_text is not None
+    lvl_text.set(qn("w:val"), label)
+
+    paragraph = document.add_paragraph("Custom")
+    _set_numbering(paragraph, bullet_num_id, 0)
+    document.save(path)
+
+
 def _write_numbering_regression_docx(path: Path) -> None:
     document = Document()
     decimal_num_ids = _numbering_num_ids(document, "decimal")
@@ -349,8 +387,8 @@ def test_docx_lists_are_linearized_with_order_and_indentation(tmp_path: Path) ->
     assert isinstance(content.blocks[0], ParagraphBlock)
     assert content.blocks[0].text == "Intro"
     assert isinstance(content.blocks[1], ParagraphBlock)
-    assert content.blocks[1].prefix == "\uf0b7 "
-    assert content.blocks[1].text == "\uf0b7 Bullet"
+    assert content.blocks[1].prefix == "\u2022 "
+    assert content.blocks[1].text == "\u2022 Bullet"
     assert isinstance(content.blocks[2], TableBlock)
     assert content.blocks[2].rows[0][0].text == "A"
     assert content.blocks[2].rows[0][1].text == "B"
@@ -359,7 +397,26 @@ def test_docx_lists_are_linearized_with_order_and_indentation(tmp_path: Path) ->
     assert content.blocks[3].text == "1. Numbered"
     assert isinstance(content.blocks[4], ParagraphBlock)
     assert content.blocks[4].text == "Outro"
-    assert content.to_text() == "Intro\n\uf0b7 Bullet\nA\tB\n1. Numbered\nOutro"
+    assert content.to_text() == "Intro\n\u2022 Bullet\nA\tB\n1. Numbered\nOutro"
+
+
+def test_docx_nested_bullets_keep_indentation_with_portable_glyph(tmp_path: Path) -> None:
+    path = tmp_path / "nested-bullets.docx"
+    _write_nested_bullet_docx(path)
+
+    content = load_input_content(None, path)
+
+    assert content.to_text() == "\u2022 Parent\n  \u2022 Child"
+
+
+@pytest.mark.parametrize("label", ["\u25e6", "\u2022"])
+def test_docx_nonlegacy_bullet_labels_are_preserved(tmp_path: Path, label: str) -> None:
+    path = tmp_path / "custom-bullet.docx"
+    _write_custom_bullet_docx(path, label)
+
+    content = load_input_content(None, path)
+
+    assert content.to_text() == f"{label} Custom"
 
 
 def test_docx_numbered_lists_continue_and_restart_by_numid_and_ilvl(tmp_path: Path) -> None:
@@ -438,7 +495,7 @@ def test_docx_extended_formatting_works_in_lists_and_tables(tmp_path: Path) -> N
 
     assert KeyPress("CTRL+SHIFT+A") in actions
     assert KeyPress("CTRL+SHIFT+MINUS") in actions
-    assert content.blocks[1].text == "\uf0b7 List"
+    assert content.blocks[1].text == "\u2022 List"
     assert content.blocks[2].rows[0][0].text == "Cell"
 
 

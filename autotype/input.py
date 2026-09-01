@@ -352,7 +352,10 @@ def _build_list_templates(document: DocxDocument) -> tuple[dict[int, _ListTempla
         for level in abstract.findall("w:lvl", NS):
             ilvl = int(level.get(qn("w:ilvl")))
             num_fmt = _xml_attr(level.find("w:numFmt", NS), qn("w:val"), default="decimal")
-            lvl_text = _xml_attr(level.find("w:lvlText", NS), qn("w:val"), default="%1.")
+            lvl_text = _normalize_bullet_label(
+                _xml_attr(level.find("w:lvlText", NS), qn("w:val"), default="%1."),
+                num_fmt,
+            )
             start = int(_xml_attr(level.find("w:start", NS), qn("w:val"), default="1"))
             definition = _ListLevelDefinition(num_fmt=num_fmt, lvl_text=lvl_text, start=start)
             level_definitions[ilvl] = definition
@@ -507,6 +510,12 @@ def _xml_attr(element, name: str, default: str = "") -> str:
     if value is None:
         return default
     return value
+
+
+def _normalize_bullet_label(label: str, num_fmt: str) -> str:
+    if num_fmt == "bullet" and label == "\uf0b7":
+        return "\u2022"
+    return label
 
 
 @dataclass(frozen=True, slots=True)

@@ -255,7 +255,8 @@ def test_dry_run_cli_reports_docx_list_prefixes(tmp_path: Path, capsys) -> None:
     captured = capsys.readouterr()
     assert exit_code == 0
     assert "Input kind: DOCX" in captured.out
-    assert "TypeText('\\uf0b7')" in captured.out
+    assert "TypeText('\u2022')" in captured.out
+    assert "TypeText('\\uf0b7')" not in captured.out
     assert "TypeText('1')" in captured.out
     assert "TypeText('.')" in captured.out
 
