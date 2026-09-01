@@ -8,6 +8,7 @@ from typing import Iterable, Iterator
 
 from docx import Document
 from docx.document import Document as DocxDocument
+from docx.opc.constants import RELATIONSHIP_TYPE as RT
 from docx.oxml.ns import qn
 from docx.table import Table
 from docx.text.paragraph import Paragraph
@@ -315,11 +316,14 @@ class _DocxListResolver:
 
 
 def _build_list_templates(document: DocxDocument) -> tuple[dict[int, _ListTemplate], dict[str, _ListStyleTemplate]]:
-    numbering_part = getattr(document.part, "numbering_part", None)
-    if numbering_part is None:
+    numbering_relationship = next(
+        (relationship for relationship in document.part.rels.values() if relationship.reltype == RT.NUMBERING),
+        None,
+    )
+    if numbering_relationship is None:
         return {}, {}
 
-    root = numbering_part.numbering_definitions._numbering
+    root = numbering_relationship.target_part.numbering_definitions._numbering
     abstract_templates: dict[int, _ListTemplate] = {}
     style_templates: dict[str, _ListStyleTemplate] = {}
     num_templates: dict[int, _ListTemplate] = {}

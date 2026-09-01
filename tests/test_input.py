@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import io
+import zipfile
+from xml.etree import ElementTree
 from pathlib import Path
 
 import pytest
@@ -188,6 +191,35 @@ def _write_conflicting_vertical_alignment_docx(path: Path) -> None:
     document.save(path)
 
 
+def _write_docx_without_numbering_part(path: Path) -> None:
+    source = io.BytesIO()
+    Document().add_paragraph("Minimal document").part.package.save(source)
+    source.seek(0)
+
+    relationships_path = "word/_rels/document.xml.rels"
+    content_types_path = "[Content_Types].xml"
+    relationship_namespace = "http://schemas.openxmlformats.org/package/2006/relationships"
+    numbering_relationship_type = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering"
+    with zipfile.ZipFile(source) as archive, zipfile.ZipFile(path, "w") as output:
+        for info in archive.infolist():
+            if info.filename == "word/numbering.xml":
+                continue
+            data = archive.read(info.filename)
+            if info.filename == relationships_path:
+                root = ElementTree.fromstring(data)
+                for relationship in root.findall(f"{{{relationship_namespace}}}Relationship"):
+                    if relationship.get("Type") == numbering_relationship_type:
+                        root.remove(relationship)
+                data = ElementTree.tostring(root, encoding="utf-8", xml_declaration=True)
+            elif info.filename == content_types_path:
+                root = ElementTree.fromstring(data)
+                for override in root:
+                    if override.get("PartName") == "/word/numbering.xml":
+                        root.remove(override)
+                data = ElementTree.tostring(root, encoding="utf-8", xml_declaration=True)
+            output.writestr(info, data)
+
+
 def test_plain_text_normalizes_line_endings() -> None:
     content = load_input_content("Hello\r\nworld", None)
 
@@ -363,6 +395,13 @@ def test_docx_rejects_conflicting_vertical_alignment(tmp_path: Path) -> None:
 
     with pytest.raises(InputError, match="both superscript and subscript"):
         load_input_content(None, path)
+
+
+def test_minimal_docx_without_numbering_part_loads_text(tmp_path: Path) -> None:
+    path = tmp_path / "minimal-without-numbering.docx"
+    _write_docx_without_numbering_part(path)
+
+    assert load_input_text(None, path) == "Minimal document"
 
 
 def test_docx_formatting_resets_at_block_boundaries(tmp_path: Path) -> None:
