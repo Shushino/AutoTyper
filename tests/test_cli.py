@@ -23,6 +23,14 @@ def _write_table_docx(path: Path) -> None:
     document.save(path)
 
 
+def _write_merged_table_docx(path: Path) -> None:
+    document = Document()
+    table = document.add_table(rows=1, cols=2)
+    table.cell(0, 0).text = "Merged"
+    table.cell(0, 0).merge(table.cell(0, 1))
+    document.save(path)
+
+
 def _write_formatted_docx(path: Path) -> None:
     document = Document()
 
@@ -250,6 +258,17 @@ def test_dry_run_cli_reports_docx_list_prefixes(tmp_path: Path, capsys) -> None:
     assert "TypeText('\\uf0b7')" in captured.out
     assert "TypeText('1')" in captured.out
     assert "TypeText('.')" in captured.out
+
+
+def test_dry_run_cli_does_not_duplicate_merged_cell_text(tmp_path: Path, capsys) -> None:
+    path = tmp_path / "merged-table.docx"
+    _write_merged_table_docx(path)
+
+    exit_code = main(["--file", str(path), "--dry-run", "--speed", "60", "--countdown", "0", "--profile", "precise"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert captured.out.count("TypeText('M')") == 1
 
 
 def test_dry_run_cli_reports_extended_formatting(tmp_path: Path, capsys) -> None:

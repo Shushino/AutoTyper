@@ -35,6 +35,33 @@ def _write_docx_with_table(path: Path) -> None:
     document.save(path)
 
 
+def _write_merged_cells_docx(path: Path) -> None:
+    document = Document()
+    table = document.add_table(rows=3, cols=3)
+
+    header = table.cell(0, 0).paragraphs[0].add_run("Header")
+    header.bold = True
+    table.cell(0, 0).merge(table.cell(0, 1))
+    table.cell(0, 2).text = "Right"
+
+    table.cell(1, 0).text = "Vertical"
+    table.cell(1, 0).merge(table.cell(2, 0))
+    table.cell(1, 1).text = "Middle"
+    table.cell(1, 2).text = "Top right"
+    table.cell(2, 1).text = "Bottom"
+    table.cell(2, 2).text = "Bottom right"
+
+    document.save(path)
+
+
+def _write_identical_unmerged_cells_docx(path: Path) -> None:
+    document = Document()
+    table = document.add_table(rows=1, cols=2)
+    table.cell(0, 0).text = "Same"
+    table.cell(0, 1).text = "Same"
+    document.save(path)
+
+
 def _write_formatted_docx(path: Path) -> None:
     document = Document()
 
@@ -258,6 +285,32 @@ def test_docx_paragraphs_and_tables_preserve_document_order(tmp_path: Path) -> N
     assert isinstance(content.blocks[2], ParagraphBlock)
     assert content.blocks[2].text == "Outro"
     assert content.to_text() == "Intro\nA\tB\nCaf\u00e9\t\nOutro"
+
+
+def test_docx_merged_cells_emit_anchor_once_and_preserve_grid(tmp_path: Path) -> None:
+    path = tmp_path / "merged-cells.docx"
+    _write_merged_cells_docx(path)
+
+    content = load_input_content(None, path)
+
+    assert content.to_text() == (
+        "Header\t\tRight\n"
+        "Vertical\tMiddle\tTop right\n"
+        "\tBottom\tBottom right"
+    )
+    actions = content.to_actions()
+    assert "".join(action.text for action in actions if isinstance(action, TypeText)) == content.to_text()
+    assert actions.count(KeyPress("CTRL+B")) == 2
+
+
+def test_docx_identical_unmerged_cells_are_not_deduplicated(tmp_path: Path) -> None:
+    path = tmp_path / "identical-cells.docx"
+    _write_identical_unmerged_cells_docx(path)
+
+    content = load_input_content(None, path)
+
+    assert content.to_text() == "Same\tSame"
+    assert [cell.text for cell in content.blocks[0].rows[0]] == ["Same", "Same"]
 
 
 def test_docx_run_formatting_is_preserved_in_actions(tmp_path: Path) -> None:

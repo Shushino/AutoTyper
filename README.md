@@ -4,7 +4,7 @@ AutoType is a Windows-only Python project for controlled keyboard automation.
 
 ## Current Milestone
 
-Milestone 9 adds direct DOCX character-formatting fidelity on top of the Milestone 8 configuration and Milestone 7 DOCX input layers.
+Milestone 10 adds merged-cell-aware DOCX table linearization on top of the existing document-input and character-formatting layers.
 
 Action flow:
 
@@ -17,7 +17,7 @@ What it now does:
 
 - plain-text typing
 - `.txt` and `.docx` input
-- DOCX paragraph and basic table extraction
+- DOCX paragraph and merged-cell-aware table extraction
 - DOCX bulleted and numbered list normalization
 - direct DOCX run formatting for bold, italic, underline, all caps, small caps, superscript, and subscript
 - typed action model with `TypeText`, `Pause`, and `KeyPress`
@@ -122,7 +122,7 @@ Precedence is:
 
 - Plain strings stay plain strings.
 - Existing `.txt` and `.docx` paths passed positionally are treated as files.
-- DOCX paragraphs and basic tables are normalized into canonical text using newline and tab separators.
+- DOCX paragraphs and tables are normalized into canonical text using newline and tab separators; merged cell continuations remain empty grid slots instead of duplicating anchor text.
 - DOCX bulleted and numbered lists are normalized into canonical typed prefixes with consistent indentation.
 - Direct DOCX run formatting is preserved in the action stream using existing `KeyPress` toggles. Supported effects are bold, italic, underline, all caps, small caps, superscript, and subscript.
 - Blank paragraphs become empty lines in the normalized content stream.

@@ -193,12 +193,29 @@ def _iter_docx_blocks(document: DocxDocument) -> Iterator[DocumentBlock]:
             yield ParagraphBlock(tuple(_iter_paragraph_runs(paragraph)), prefix=list_resolver.prefix_for(paragraph))
         elif child.tag == qn("w:tbl"):
             table = Table(child, document)
-            yield TableBlock(
-                tuple(
-                    tuple(_iter_cell_block(cell, list_resolver) for cell in row.cells)
-                    for row in table.rows
-                )
-            )
+            yield TableBlock(tuple(_iter_table_rows(table, list_resolver)))
+
+
+def _iter_table_rows(table: Table, list_resolver: "_DocxListResolver") -> Iterator[tuple[CellBlock, ...]]:
+    seen_cells: list[object] = []
+    for row in table.rows:
+        yield _iter_table_row(row, list_resolver, seen_cells)
+
+
+def _iter_table_row(
+    row,
+    list_resolver: "_DocxListResolver",
+    seen_cells: list[object],
+) -> tuple[CellBlock, ...]:
+    cells: list[CellBlock] = []
+    for cell in row.cells:
+        cell_element = cell._tc
+        if any(cell_element is seen_cell for seen_cell in seen_cells):
+            cells.append(CellBlock(()))
+            continue
+        seen_cells.append(cell_element)
+        cells.append(_iter_cell_block(cell, list_resolver))
+    return tuple(cells)
 
 
 def _iter_paragraph_runs(paragraph: Paragraph) -> Iterator[TextRun]:
