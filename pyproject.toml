@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Windows human-input document automation starter"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = ["python-docx"]
 
 [project.optional-dependencies]
 dev = ["pytest"]
@@ -17,7 +17,7 @@ dev = ["pytest"]
 autotype = "autotype.cli:main"
 
 [tool.setuptools]
-packages = ["autotype"]
+packages = ["autotype", "autotype.behaviour"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
