@@ -137,18 +137,28 @@ def load_input_text(raw_text: str | None, file_path: Path | None) -> str:
 
 
 def load_input_content(raw_text: str | None, file_path: Path | None) -> DocumentContent:
-    if file_path is not None:
-        return load_content_from_path(file_path)
+    resolved_path = resolve_input_path(raw_text, file_path)
+    if resolved_path is not None:
+        return load_content_from_path(resolved_path)
     if raw_text is None:
         raise InputError("Provide either text or --file.")
     if raw_text == "":
         return DocumentContent.from_text("")
 
+    return DocumentContent.from_text(raw_text)
+
+
+def resolve_input_path(raw_text: str | None, file_path: Path | None) -> Path | None:
+    """Resolve an explicit file or an existing positional file path."""
+    if file_path is not None:
+        return file_path.expanduser()
+    if raw_text is None or raw_text == "":
+        return None
+
     candidate = Path(raw_text).expanduser()
     if candidate.exists():
-        return load_content_from_path(candidate)
-
-    return DocumentContent.from_text(raw_text)
+        return candidate
+    return None
 
 
 def load_content_from_path(path: Path) -> DocumentContent:

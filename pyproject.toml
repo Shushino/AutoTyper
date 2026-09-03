@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Windows human-input document automation starter"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = ["python-docx"]
+dependencies = ["python-docx", "pywin32>=306; sys_platform == 'win32'"]
 
 [project.optional-dependencies]
 dev = ["pytest"]
@@ -22,3 +22,6 @@ packages = ["autotype", "autotype.behaviour"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = [
+    "word_integration: opt-in tests requiring an already-running Microsoft Word instance",
+]

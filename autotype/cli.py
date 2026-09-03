@@ -24,8 +24,9 @@ from .config import (
 from .controller import RunController, RunState
 from .executors import WindowsExecutor
 from .hotkeys import WindowsHotkeyMonitor
-from .input import InputError, load_input_content
+from .input import InputError, load_input_content, resolve_input_path
 from .planner import build_actions_from_content
+from .word import WordDocumentInserter, WordDryRun, WordPreflightError, validate_word_source
 
 
 CLI_EPILOG = """Examples:
@@ -52,6 +53,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("text", nargs="?", help="Text to type or an existing .txt/.docx file path")
     parser.add_argument("--file", type=Path, help="Read text from a .txt or .docx file with DOCX normalization")
+    parser.add_argument("--target", choices=("keyboard", "word"), default="keyboard", help="Execution target: simulated keyboard typing or native Microsoft Word insertion")
     parser.add_argument("--config", type=Path, default=argparse.SUPPRESS, help="Read and write settings from a JSON config file")
     parser.add_argument("--speed", type=float, default=argparse.SUPPRESS, help="Typing speed in words per minute")
     parser.add_argument("--countdown", type=float, default=argparse.SUPPRESS, help="Countdown before typing starts")
@@ -249,6 +251,9 @@ def main(argv: list[str] | None = None) -> int:
     except ConfigError as exc:
         raise SystemExit(str(exc)) from exc
 
+    if args.target == "word":
+        return _run_word_target(args)
+
     content = read_input_content(args)
     typing_config = TypingConfig(
         words_per_minute=settings.speed,
@@ -305,4 +310,32 @@ def main(argv: list[str] | None = None) -> int:
 
     if result.state == RunState.STOPPED:
         return 130
+    return 0
+
+
+def _run_word_target(args: argparse.Namespace) -> int:
+    source_path = resolve_input_path(args.text, args.file)
+    if source_path is None:
+        raise SystemExit("Word mode requires an existing .docx path via --file or the positional argument.")
+    source_path = source_path.expanduser()
+    if source_path.suffix.lower() != ".docx":
+        raise SystemExit("Word mode accepts an existing .docx file only; TXT and plain text are unsupported.")
+
+    if args.dry_run:
+        try:
+            # Dry run validates the source package but intentionally never
+            # imports pywin32 or contacts Word.
+            print(WordDryRun(source_path=validate_word_source(source_path)).render())
+            return 0
+        except WordPreflightError as exc:
+            raise SystemExit(str(exc)) from exc
+
+    print("[Word mode] Inserting DOCX natively into the active Microsoft Word document...")
+    print("Word mode does not type character-by-character, apply human timing, or introduce typos.")
+    print("Keyboard timing, profile, typo, progress, and hotkey settings are not applied in Word mode.")
+    try:
+        WordDocumentInserter().insert(source_path)
+    except WordPreflightError as exc:
+        raise SystemExit(str(exc)) from exc
+    print("[Word mode] Native insertion complete. The document was not saved automatically.")
     return 0

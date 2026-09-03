@@ -4,7 +4,7 @@ AutoType is a Windows-only Python project for controlled keyboard automation.
 
 ## Current Milestone
 
-Milestone 11 adds portable default DOCX bullet normalization on top of the existing document-input and table linearization layers.
+Milestone 12 adds an opt-in native Microsoft Word fidelity target while preserving the keyboard target.
 
 Action flow:
 
@@ -35,6 +35,7 @@ What it now does:
 - mock executor for tests
 - four behavior profiles: `precise`, `natural`, `careful`, `fast`
 - deterministic timing with `--seed`
+- opt-in native Word DOCX insertion with `--target word`
 
 ## Safety
 
@@ -70,6 +71,23 @@ Or type text from a file:
 ```bash
 autotype --file text.txt
 ```
+
+Execution targets:
+
+```bash
+# Default: human-like keyboard typing into the focused application
+autotype --file input.docx --target keyboard
+
+# Native insertion into an already-running, active Microsoft Word document
+autotype --file input.docx --target word
+```
+
+Word fidelity mode requires Windows, Microsoft Word already running, and a
+collapsed caret in the editable main document body. It inserts the original
+DOCX natively; it does not type character-by-character, apply timing, or
+introduce typos. Timing, profile, typo, progress, and hotkey settings are not
+applied in this mode. AutoTyper does not launch Word, save the document, or
+change Word's AutoCorrect/AutoFormat settings.
 
 ## Hotkeys
 
@@ -124,6 +142,7 @@ Precedence is:
 - Existing `.txt` and `.docx` paths passed positionally are treated as files.
 - DOCX paragraphs and tables are normalized into canonical text using newline and tab separators; merged cell continuations remain empty grid slots instead of duplicating anchor text.
 - DOCX bulleted and numbered lists are normalized into canonical typed prefixes with consistent indentation; Word's default Symbol bullet is emitted as the portable Unicode bullet `U+2022`.
+- `--target word` bypasses this lossy keyboard normalization and inserts the source DOCX as native Word content, preserving the fixture's native lists, tables, merges, styles, and supported formatting.
 - Direct DOCX run formatting is preserved in the action stream using existing `KeyPress` toggles. Supported effects are bold, italic, underline, all caps, small caps, superscript, and subscript.
 - Blank paragraphs become empty lines in the normalized content stream.
 - Images, headers, footers, and full style inheritance are still ignored.
@@ -159,12 +178,16 @@ pytest
 Direct run-level support is limited to the formatting effects listed above. Full style inheritance and parameterized font properties are not included:
 
 - PPTX support
-- Word-specific automation
 - clipboard automation
 - OCR
 - GUI
 - full Word style inheritance
 - strikethrough, highlighting, font name, font size, font colour, underline variants, and other font effects
+
+Word fidelity mode is fixture-focused rather than arbitrary-DOCX or
+pixel-perfect reproduction. It does not promise custom-template conflict
+resolution, bookmark insertion, or unsupported objects such as images,
+headers/footers, sections, comments, tracked changes, macros, and shapes.
 
 Formatting shortcuts target desktop Word on Windows, require the target document to have focus, and may vary with Word version or keyboard layout. The `EQUALS` action represents the Windows `VK_OEM_PLUS` key for superscript, and `MINUS` represents `VK_OEM_MINUS` for subscript.
 
@@ -177,4 +200,4 @@ Those belong to future milestones.
 3. Milestone 7: basic DOCX lists
 4. Milestone 8: lightweight persistent configuration
 5. Milestone 9: direct DOCX character formatting expansion
-6. Future milestones: richer application support and native table or layout handling
+6. Future milestones: richer application support beyond the fixture-focused Word target
