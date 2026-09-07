@@ -25,6 +25,10 @@ from .controller import RunController, RunState
 from .executors import WindowsExecutor
 from .hotkeys import WindowsHotkeyMonitor
 from .input import InputError, load_input_content, resolve_input_path
+from .hybrid_input import HybridInputError, load_hybrid_plan
+from .hybrid_runner import HybridRunError, HybridRunner
+from .hybrid_word import HybridWordAdapter
+from .focus import WordFocusGuard
 from .planner import build_actions_from_content
 from .word import WordDocumentInserter, WordDryRun, WordPreflightError, validate_word_source
 
@@ -55,7 +59,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("text", nargs="?", help="Text to type or an existing .txt/.docx file path")
     parser.add_argument("--file", type=Path, help="Read text from a .txt or .docx file with DOCX normalization")
-    parser.add_argument("--target", choices=("keyboard", "word"), default="keyboard", help="Execution target (default: keyboard): simulated typing or native Word DOCX insertion")
+    parser.add_argument("--target", choices=("keyboard", "word", "hybrid"), default="keyboard", help="Execution target (default: keyboard): simulated typing, native Word insertion, or experimental hybrid typing")
     parser.add_argument("--config", type=Path, default=argparse.SUPPRESS, help="Read and write settings from a JSON config file")
     parser.add_argument("--speed", type=float, default=argparse.SUPPRESS, help="Typing speed in words per minute")
     parser.add_argument("--countdown", type=float, default=argparse.SUPPRESS, help="Countdown before typing starts")
@@ -255,6 +259,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.target == "word":
         return _run_word_target(args)
+    if args.target == "hybrid":
+        return _run_hybrid_target(args, settings)
 
     content = read_input_content(args)
     typing_config = TypingConfig(
@@ -344,3 +350,62 @@ def _run_word_target(args: argparse.Namespace) -> int:
         raise SystemExit(str(exc)) from exc
     print("[Word mode] Native insertion complete. The document was not saved automatically.")
     return 0
+
+
+def _run_hybrid_target(args: argparse.Namespace, settings: AppSettings) -> int:
+    source_path = resolve_input_path(args.text, args.file)
+    if source_path is None:
+        raise SystemExit("Hybrid mode requires an existing .docx path via --file or the positional argument.")
+    try:
+        plan = load_hybrid_plan(source_path)
+    except HybridInputError as exc:
+        raise SystemExit(str(exc)) from exc
+
+    if args.dry_run:
+        print(_render_hybrid_dry_run(plan))
+        return 0
+
+    print("[Hybrid mode] Experimental COM-assisted visible typing.")
+    print("[Hybrid mode] Typo simulation is disabled until cursor-local correction is proven safe.")
+    print("[Hybrid mode] Checking destination...")
+    try:
+        runner = HybridRunner(
+            adapter=HybridWordAdapter(),
+            focus_guard=WordFocusGuard(),
+            executor=WindowsExecutor(),
+            typing_config=TypingConfig(
+                words_per_minute=settings.speed,
+                countdown_seconds=settings.countdown,
+                poll_interval_seconds=args.poll_interval,
+            ),
+            profile=settings.profile,
+            seed=args.seed,
+            pause_key=args.pause_key,
+            stop_key=args.stop_key,
+        )
+        result = runner.run(plan)
+    except (HybridRunError, OSError) as exc:
+        raise SystemExit(str(exc)) from exc
+    print(f"[Hybrid mode] Complete: {result.completed_targets} typed segments. The document was not saved automatically.")
+    return 0
+
+
+def _render_hybrid_dry_run(plan) -> str:
+    unsupported = "none" if not plan.unsupported else "; ".join(f"{item.kind}: {item.detail}" for item in plan.unsupported)
+    return "\n".join(
+        (
+            "[HYBRID DRY RUN]",
+            f"Source DOCX: {plan.source_path}",
+            "Mode: experimental COM-assisted visible typing, not native InsertFile",
+            f"Blocks: {len(plan.blocks)}",
+            f"Paragraphs: {plan.paragraph_count}",
+            f"Runs: {plan.run_count}",
+            f"Lists: {plan.list_count}",
+            f"Tables: {plan.table_count}",
+            f"Cells: {plan.cell_count}",
+            f"Unsupported: {unsupported}",
+            "Workflow: COM creates supported structures and formatting; Windows keyboard input types text visibly.",
+            "COM: not imported or contacted",
+            "No Word document was changed.",
+        )
+    )

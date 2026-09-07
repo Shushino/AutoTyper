@@ -3,6 +3,7 @@ from .config import HotkeyConfig, TypingConfig
 from .controller import RunController, RunResult, RunState
 from .executors import MockExecutor, WindowsExecutor
 from .word import WordDocumentInserter, WordDryRun, WordPreflightError, WordPreflightResult
+from .hybrid_model import HybridDocumentPlan
 
 __all__ = [
     "Action",
@@ -20,4 +21,5 @@ __all__ = [
     "WordDryRun",
     "WordPreflightError",
     "WordPreflightResult",
+    "HybridDocumentPlan",
 ]

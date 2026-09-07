@@ -4,7 +4,7 @@ AutoType is a Windows-only Python project for controlled keyboard automation.
 
 ## Current Milestone
 
-Milestone 12 adds an opt-in native Microsoft Word fidelity target while preserving the keyboard target.
+Milestone 14 adds an experimental hybrid Word target while preserving the keyboard and native Word targets.
 
 Action flow:
 
@@ -36,6 +36,7 @@ What it now does:
 - four behavior profiles: `precise`, `natural`, `careful`, `fast`
 - deterministic timing with `--seed`
 - opt-in native Word DOCX insertion with `--target word`
+- experimental COM-assisted visible Word typing with `--target hybrid`
 
 ## Safety
 
@@ -80,6 +81,9 @@ autotype --file input.docx --target keyboard
 
 # Native insertion into an already-running, active Microsoft Word document
 autotype --file input.docx --target word
+
+# Experimental: create supported Word structures, then type source text visibly
+autotype --file input.docx --target hybrid
 ```
 
 Word fidelity mode requires Windows, Microsoft Word already running, and a
@@ -94,6 +98,15 @@ for the normal-privilege workflow and troubleshooting.
 | --- | --- | --- | --- |
 | `keyboard` | Yes | Simulated typing with human timing and optional typos | Linearized text/action stream |
 | `word` | No | Native insertion into an already-running Word document | Native paragraphs, lists, tables, merges, and supported styles |
+| `hybrid` | No | Experimental COM-created structures with visible keyboard typing | Constrained paragraphs, formatting, lists, and simple tables |
+
+Hybrid mode is experimental and Windows/Word-only. It creates supported native
+Word structures through COM, then types actual source text visibly through the
+keyboard executor. It is not proof of human authorship and does not guarantee
+arbitrary DOCX or pixel-perfect fidelity. It currently supports normal/built-in
+heading paragraphs, bold/italic/underline, basic paragraph formatting,
+single-level native lists, and rectangular unmerged tables. See
+[Hybrid mode](docs/hybrid-mode.md) for prerequisites, recovery, and limits.
 
 ## Hotkeys
 
@@ -114,6 +127,7 @@ for the normal-privilege workflow and troubleshooting.
 - `--speed` sets the target words per minute
 - `--typo-rate` enables deterministic typo simulation from `0.0` to `0.10`
 - `--file` reads from an explicit `.txt` or `.docx` file
+- `--target hybrid` is experimental and accepts existing `.docx` inputs only
 - `--progress` shows lightweight live progress during execution
 - `--no-progress` disables live progress explicitly
 - `--config` loads or saves JSON configuration
@@ -194,6 +208,14 @@ Word fidelity mode is fixture-focused rather than arbitrary-DOCX or
 pixel-perfect reproduction. It does not promise custom-template conflict
 resolution, bookmark insertion, or unsupported objects such as images,
 headers/footers, sections, comments, tracked changes, macros, and shapes.
+
+Hybrid mode intentionally has a narrower boundary: it rejects unsupported
+source structures before touching Word, including merged/nested tables,
+multi-paragraph table cells, inline images, and non-empty headers or footers.
+It does not use the clipboard, mouse coordinates, ribbon automation, image
+recognition, automatic saving, or automatic rollback. If it stops after a
+partial document change, inspect the document and use Word's Undo (`Ctrl+Z`)
+manually.
 
 Formatting shortcuts target desktop Word on Windows, require the target document to have focus, and may vary with Word version or keyboard layout. The `EQUALS` action represents the Windows `VK_OEM_PLUS` key for superscript, and `MINUS` represents `VK_OEM_MINUS` for subscript.
 
