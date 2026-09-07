@@ -32,6 +32,7 @@ class HybridWordAdapter:
 
     def __init__(self, *, active_object: Callable[[str], object] | None = None) -> None:
         self._active_object = active_object
+        self._active_list_group_id: int | None = None
 
     def preflight(self) -> HybridWordContext:
         if os.name != "nt":
@@ -70,16 +71,13 @@ class HybridWordAdapter:
             raise
         except Exception as exc:
             raise HybridWordError("Could not validate the active Word destination.") from exc
+        self._active_list_group_id = None
         return HybridWordContext(application, document, selection)
 
     def prepare_paragraph(self, context: HybridWordContext, paragraph: HybridParagraph) -> None:
         selection = self._selection(context)
         self._apply_paragraph(selection, paragraph)
-        if paragraph.list_spec is not None:
-            if paragraph.list_spec.kind == "bullet":
-                selection.Range.ListFormat.ApplyBulletDefault()
-            else:
-                selection.Range.ListFormat.ApplyNumberDefault()
+        self._apply_list_context(selection, paragraph.list_spec)
 
     def revalidate(self, context: HybridWordContext) -> None:
         """Confirm the same live destination remains available after a pause."""
@@ -110,6 +108,7 @@ class HybridWordAdapter:
         if not rows or not columns:
             raise HybridWordError("Hybrid mode cannot create an empty table.")
         try:
+            self._reset_list_context(context)
             for index, width in enumerate(table.column_widths, start=1):
                 if width is None:
                     continue
@@ -123,6 +122,7 @@ class HybridWordAdapter:
             for index, width in enumerate(table.column_widths, start=1):
                 if width is not None:
                     created.Columns.Item(index).Width = float(width)
+            self._apply_table_grid(created)
             return created
         except HybridWordError:
             raise
@@ -148,6 +148,7 @@ class HybridWordAdapter:
             target.Collapse(self._WD_COLLAPSE_END)
             target.Select()
             self._selection(context).TypeParagraph()
+            self._active_list_group_id = None
         except Exception as exc:
             raise HybridWordError("Could not create the paragraph after a hybrid table.") from exc
 
@@ -163,6 +164,38 @@ class HybridWordAdapter:
             if selected_name != expected_name:
                 raise HybridWordError("The active Word document changed during hybrid typing.")
         return selection
+
+    def _apply_list_context(self, selection: object, list_spec) -> None:
+        list_format = selection.Range.ListFormat
+        if list_spec is None:
+            self._reset_list_format(list_format)
+            return
+        if list_spec.group_id == self._active_list_group_id:
+            return
+        self._reset_list_format(list_format)
+        if list_spec.kind == "bullet":
+            list_format.ApplyBulletDefault()
+        else:
+            list_format.ApplyNumberDefault()
+        self._active_list_group_id = list_spec.group_id
+
+    def _reset_list_context(self, context: HybridWordContext) -> None:
+        if self._active_list_group_id is None:
+            return
+        self._reset_list_format(self._selection(context).Range.ListFormat)
+
+    def _reset_list_format(self, list_format: object) -> None:
+        if self._active_list_group_id is not None:
+            list_format.RemoveNumbers()
+            self._active_list_group_id = None
+
+    @staticmethod
+    def _apply_table_grid(table: object) -> None:
+        try:
+            table.Borders.Enable = True
+        except Exception as exc:
+            detail = HybridWordAdapter._com_error_detail(exc)
+            raise HybridWordError(f"Microsoft Word failed while applying the hybrid table grid: {detail}") from exc
 
     def _table_insertion_range(self, context: HybridWordContext):
         """Return a fresh, collapsed range suitable for Tables.Add."""

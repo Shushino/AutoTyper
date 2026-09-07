@@ -18,6 +18,7 @@ class HybridRun:
 @dataclass(frozen=True, slots=True)
 class HybridListSpec:
     kind: str  # "bullet" or "number"
+    group_id: int
 
 
 @dataclass(frozen=True, slots=True)

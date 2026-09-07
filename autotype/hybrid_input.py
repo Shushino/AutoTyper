@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
 
@@ -21,6 +22,25 @@ class HybridInputError(ValueError):
 
 
 _BUILTIN_STYLES = {"Normal", *(f"Heading {number}" for number in range(1, 10))}
+
+
+@dataclass(slots=True)
+class _ListGroupTracker:
+    next_group_id: int = 0
+    active_kind: str | None = None
+
+    def spec_for(self, paragraph: Paragraph) -> HybridListSpec | None:
+        kind = _list_kind(paragraph)
+        if kind is None:
+            self.break_group()
+            return None
+        if kind != self.active_kind:
+            self.next_group_id += 1
+            self.active_kind = kind
+        return HybridListSpec(kind, self.next_group_id)
+
+    def break_group(self) -> None:
+        self.active_kind = None
 
 
 def _measurement_to_points(value) -> float | None:
@@ -52,18 +72,22 @@ def load_hybrid_plan(path: Path) -> HybridDocumentPlan:
         unsupported.append(HybridUnsupported("headers/footers", "non-empty headers or footers are not supported"))
 
     blocks = []
+    list_groups = _ListGroupTracker()
     for child in document.element.body.iterchildren():
         if child.tag == qn("w:p"):
-            blocks.append(_paragraph(Paragraph(child, document)))
+            paragraph = Paragraph(child, document)
+            blocks.append(_paragraph(paragraph, list_groups.spec_for(paragraph)))
         elif child.tag == qn("w:tbl"):
-            table, findings = _table(Table(child, document))
+            list_groups.break_group()
+            table, findings = _table(Table(child, document), list_groups)
             unsupported.extend(findings)
             if table is not None:
                 blocks.append(table)
+            list_groups.break_group()
     return HybridDocumentPlan(source.resolve(), tuple(blocks), tuple(unsupported))
 
 
-def _paragraph(paragraph: Paragraph) -> HybridParagraph:
+def _paragraph(paragraph: Paragraph, list_spec: HybridListSpec | None = None) -> HybridParagraph:
     style_name = getattr(paragraph.style, "name", None)
     if style_name not in _BUILTIN_STYLES:
         style_name = None
@@ -80,20 +104,20 @@ def _paragraph(paragraph: Paragraph) -> HybridParagraph:
         left_indent=_measurement_to_points(fmt.left_indent),
         first_line_indent=_measurement_to_points(fmt.first_line_indent),
         line_spacing=_measurement_to_points(fmt.line_spacing) if isinstance(fmt.line_spacing, Length) else None,
-        list_spec=_list_spec(paragraph),
+        list_spec=list_spec,
     )
 
 
-def _list_spec(paragraph: Paragraph) -> HybridListSpec | None:
+def _list_kind(paragraph: Paragraph) -> str | None:
     name = getattr(paragraph.style, "name", "").lower()
     if name.startswith("list bullet"):
-        return HybridListSpec("bullet")
+        return "bullet"
     if name.startswith("list number"):
-        return HybridListSpec("number")
+        return "number"
     return None
 
 
-def _table(table: Table) -> tuple[HybridTable | None, list[HybridUnsupported]]:
+def _table(table: Table, list_groups: _ListGroupTracker) -> tuple[HybridTable | None, list[HybridUnsupported]]:
     findings: list[HybridUnsupported] = []
     rows: list[tuple[HybridCell, ...]] = []
     width = None
@@ -112,7 +136,9 @@ def _table(table: Table) -> tuple[HybridTable | None, list[HybridUnsupported]]:
                 continue
             if cell.tables:
                 findings.append(HybridUnsupported("nested table", "nested tables are not supported"))
-            paragraphs = tuple(_paragraph(item) for item in cell.paragraphs)
+            list_groups.break_group()
+            paragraphs = tuple(_paragraph(item, list_groups.spec_for(item)) for item in cell.paragraphs)
+            list_groups.break_group()
             if len(paragraphs) > 1:
                 findings.append(HybridUnsupported("multi-paragraph cell", "only one paragraph per table cell is supported"))
             current.append(HybridCell(paragraphs))

@@ -13,7 +13,7 @@ from autotype.config import TypingConfig
 from autotype.controller import RunResult, RunState
 from autotype.focus import FocusError, WordFocusGuard
 from autotype.hybrid_input import load_hybrid_plan
-from autotype.hybrid_model import HybridCell, HybridDocumentPlan, HybridParagraph, HybridRun, HybridTable, HybridUnsupported
+from autotype.hybrid_model import HybridCell, HybridDocumentPlan, HybridListSpec, HybridParagraph, HybridRun, HybridTable, HybridUnsupported
 from autotype.hybrid_runner import HybridRunError, HybridRunner
 from autotype.hybrid_word import HybridWordAdapter, HybridWordError
 
@@ -71,6 +71,43 @@ def test_hybrid_parser_converts_docx_measurements_to_points(tmp_path: Path) -> N
     assert table_plan.column_widths == (72.0, 144.0)
 
 
+def test_hybrid_parser_assigns_logical_list_groups(tmp_path: Path) -> None:
+    path = tmp_path / "list-groups.docx"
+    doc = Document()
+    for text in ("One", "Two", "Three"):
+        doc.add_paragraph(text, style="List Number")
+    doc.add_paragraph("Normal")
+    for text in ("Bullet one", "Bullet two"):
+        doc.add_paragraph(text, style="List Bullet")
+    doc.add_paragraph("Normal again")
+    doc.add_paragraph("Later number", style="List Number")
+    doc.save(path)
+
+    plan = load_hybrid_plan(path)
+    specs = [block.list_spec for block in plan.blocks]
+    assert [(spec.kind, spec.group_id) if spec else None for spec in specs] == [
+        ("number", 1), ("number", 1), ("number", 1), None,
+        ("bullet", 2), ("bullet", 2), None, ("number", 3),
+    ]
+
+
+def test_hybrid_parser_isolates_list_groups_at_table_boundaries(tmp_path: Path) -> None:
+    path = tmp_path / "table-list-boundary.docx"
+    doc = Document()
+    doc.add_paragraph("Before", style="List Number")
+    table = doc.add_table(rows=1, cols=1)
+    table.cell(0, 0).text = "Cell"
+    doc.add_paragraph("After", style="List Number")
+    doc.save(path)
+
+    plan = load_hybrid_plan(path)
+    before_spec = plan.blocks[0].list_spec
+    cell_spec = plan.blocks[1].rows[0][0].paragraphs[0].list_spec
+    after_spec = plan.blocks[2].list_spec
+    assert before_spec is not None and cell_spec is None and after_spec is not None
+    assert before_spec.group_id != after_spec.group_id
+
+
 def test_hybrid_parser_reports_merged_and_nested_tables(tmp_path: Path) -> None:
     path = tmp_path / "unsupported.docx"
     doc = Document()
@@ -114,10 +151,25 @@ class _FakeSelection:
         self.Range = self
         self.Font = type("Font", (), {})()
         self.ParagraphFormat = type("Format", (), {})()
+        self.ListFormat = _FakeListFormat()
         self.typed_paragraphs = 0
 
     def TypeParagraph(self) -> None:
         self.typed_paragraphs += 1
+
+
+class _FakeListFormat:
+    def __init__(self) -> None:
+        self.operations: list[str] = []
+
+    def ApplyBulletDefault(self) -> None:
+        self.operations.append("bullet")
+
+    def ApplyNumberDefault(self) -> None:
+        self.operations.append("number")
+
+    def RemoveNumbers(self) -> None:
+        self.operations.append("remove")
 
 
 class _FakeDocument:
@@ -175,6 +227,27 @@ def test_hybrid_adapter_applies_paragraph_and_run_formatting() -> None:
     assert app.Selection.Font.Underline is True
 
 
+def test_hybrid_adapter_isolates_number_and_bullet_list_groups() -> None:
+    app = _FakeApp()
+    adapter = HybridWordAdapter(active_object=lambda _: app)
+    context = adapter.preflight()
+
+    paragraphs = (
+        HybridParagraph((HybridRun("1"),), list_spec=HybridListSpec("number", 1)),
+        HybridParagraph((HybridRun("2"),), list_spec=HybridListSpec("number", 1)),
+        HybridParagraph((HybridRun("3"),), list_spec=HybridListSpec("number", 1)),
+        HybridParagraph((HybridRun("normal"),)),
+        HybridParagraph((HybridRun("bullet 1"),), list_spec=HybridListSpec("bullet", 2)),
+        HybridParagraph((HybridRun("bullet 2"),), list_spec=HybridListSpec("bullet", 2)),
+        HybridParagraph((HybridRun("normal again"),)),
+        HybridParagraph((HybridRun("later number"),), list_spec=HybridListSpec("number", 3)),
+    )
+    for paragraph in paragraphs:
+        adapter.prepare_paragraph(context, paragraph)
+
+    assert app.Selection.ListFormat.operations == ["number", "remove", "bullet", "remove", "number"]
+
+
 class _TableInsertionRange:
     def __init__(self, start: int = 10, end: int = 10) -> None:
         self.Start = start
@@ -203,6 +276,7 @@ class _TableSelection(_FakeSelection):
 class _CreatedTable:
     def __init__(self) -> None:
         self.column_widths = {}
+        self.Borders = type("Borders", (), {})()
 
         class Columns:
             def Item(columns_self, index: int):
@@ -266,6 +340,7 @@ def test_hybrid_adapter_table_creation_uses_collapsed_duplicate_range() -> None:
     assert insertion_range is not app.Selection.Range
     assert insertion_range.collapse_direction == adapter._WD_COLLAPSE_END
     assert insertion_range.Start == insertion_range.End
+    assert app.ActiveDocument.Tables.created.Borders.Enable is True
 
 
 def test_hybrid_adapter_table_creation_surfaces_com_detail() -> None:
@@ -293,6 +368,22 @@ def test_hybrid_adapter_applies_point_widths_and_rejects_invalid_widths() -> Non
         failing_adapter.create_table(failing_context, HybridTable(_simple_table().rows, (72.0, 2000.0)))
     assert failing_app.ActiveDocument.Tables.received_range is None
 
+    class BrokenBorders:
+        @property
+        def Enable(self):
+            return False
+
+        @Enable.setter
+        def Enable(self, value):
+            raise RuntimeError("border operation failed")
+
+    border_app = _TableApp()
+    border_app.ActiveDocument.Tables.created.Borders = BrokenBorders()
+    border_adapter = HybridWordAdapter(active_object=lambda _: border_app)
+    border_context = border_adapter.preflight()
+    with pytest.raises(HybridWordError, match="applying the hybrid table grid: border operation failed"):
+        border_adapter.create_table(border_context, _simple_table())
+
 
 def test_hybrid_adapter_cell_target_excludes_end_marker() -> None:
     app = _TableApp()
@@ -313,6 +404,8 @@ def test_hybrid_adapter_cell_target_excludes_end_marker() -> None:
             super().Collapse(direction)
 
     cell_range = CellRange(20, 27)
+    cell_range.ListFormat = app.Selection.ListFormat
+    app.Selection.Range = cell_range
 
     class Cell:
         Range = cell_range
