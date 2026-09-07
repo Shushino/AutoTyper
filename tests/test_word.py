@@ -107,6 +107,19 @@ def test_word_insertion_uses_exact_native_insertfile_arguments(tmp_path: Path) -
     )
 
 
+def test_word_status_callback_uses_the_fresh_preflight_context(tmp_path: Path) -> None:
+    source = _source_docx(tmp_path)
+    selection = FakeSelection()
+    app = FakeApplication(FakeDocument(), selection)
+    observed: list[object] = []
+
+    _inserter(app).insert(source, on_preflight=observed.append)
+
+    assert len(observed) == 1
+    assert observed[0].selection is selection  # type: ignore[union-attr]
+    assert selection.inserted is not None
+
+
 def test_word_com_failure_explains_undo(tmp_path: Path) -> None:
     source = _source_docx(tmp_path)
     selection = FakeSelection()
@@ -155,6 +168,27 @@ def test_word_dry_run_does_not_construct_or_contact_adapter(tmp_path: Path, monk
     assert "WORD FIDELITY DRY RUN" in output
     assert "not imported or contacted" in output
     assert "No Word document was changed" in output
+
+
+def test_word_live_output_is_concise_and_reports_ignored_settings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    source = _source_docx(tmp_path)
+
+    class FakeInserter:
+        def insert(self, path: Path, *, on_preflight) -> None:
+            assert path == source
+            on_preflight(object())
+
+    monkeypatch.setattr(cli_module, "WordDocumentInserter", FakeInserter)
+    assert main(["--target", "word", "--speed", "110", str(source)]) == 0
+    output = capsys.readouterr().out
+    assert output.count("Keyboard-only settings") == 1
+    assert "Native DOCX insertion" in output
+    assert "Checking destination" in output
+    assert "Inserting source.docx" in output
+    assert "not saved automatically" in output
 
 
 def test_keyboard_dry_run_still_uses_existing_pipeline(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys) -> None:

@@ -37,6 +37,7 @@ class _WordApplication(Protocol):
 class WordPreflightResult:
     """Validated live Word context immediately before insertion."""
 
+    source_path: Path
     application: _WordApplication
     document: _Document
     selection: _Selection
@@ -53,7 +54,9 @@ class WordDryRun:
                 f"Source DOCX: {self.source_path}",
                 "Operation: native Microsoft Word Selection.InsertFile",
                 "Mode: structural insertion, not simulated typing",
-                "Keyboard timing, profile, typo, progress, and hotkey settings: not applied",
+                "Keyboard-only settings are accepted for compatibility but are not applied",
+                "Preserves native DOCX paragraphs, lists, tables, merges, and supported styles",
+                "Does not simulate typing, timing, typos, or change Word settings",
                 "COM: not imported or contacted",
                 "",
                 "Live preflight requires:",
@@ -92,8 +95,10 @@ class WordDocumentInserter:
             application = active_object("Word.Application")
         except Exception as exc:
             raise WordPreflightError(
-                "Microsoft Word is not running or could not be attached to. "
-                "Open Word first; AutoTyper will not launch it."
+                "Could not attach to the running Microsoft Word instance. "
+                "Open Word first; AutoTyper will not launch it. "
+                "If Word is already open, a Windows privilege-level mismatch is a likely cause; "
+                "open both Word and AutoTyper normally (without Administrator elevation)."
             ) from exc
 
         try:
@@ -134,15 +139,27 @@ class WordDocumentInserter:
         except Exception as exc:
             raise WordPreflightError("Could not validate the active Word insertion point.") from exc
 
-        return WordPreflightResult(application=application, document=document, selection=selection)
+        return WordPreflightResult(
+            source_path=source_path,
+            application=application,
+            document=document,
+            selection=selection,
+        )
 
-    def insert(self, source_path: Path) -> WordPreflightResult:
+    def insert(
+        self,
+        source_path: Path,
+        *,
+        on_preflight: Callable[[WordPreflightResult], None] | None = None,
+    ) -> WordPreflightResult:
         # Fetch the selection immediately before the operation; callers must
         # not retain a stale selection while doing unrelated work.
         context = self.preflight(source_path.expanduser().resolve())
+        if on_preflight is not None:
+            on_preflight(context)
         try:
             context.selection.InsertFile(
-                str(source_path),
+                str(context.source_path),
                 ConfirmConversions=False,
                 Link=False,
                 Attachment=False,

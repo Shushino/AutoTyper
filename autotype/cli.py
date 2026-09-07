@@ -35,6 +35,8 @@ CLI_EPILOG = """Examples:
   autotype --file sample.docx --dry-run --profile natural --seed 1234
   autotype --file lists.docx --dry-run --profile natural --seed 1234
   autotype --file lists.docx --countdown 5 --progress
+  autotype --file lists.docx --target word --dry-run
+  autotype --file lists.docx --target word
   autotype --show-config
   autotype --speed 110 --save-config --config .pytest-tmp/custom_config.json
 
@@ -47,13 +49,13 @@ Hotkeys during live runs:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="autotype",
-        description="Windows text typing automation",
+        description="Windows document automation: simulated keyboard typing or native Word DOCX insertion",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=CLI_EPILOG,
     )
     parser.add_argument("text", nargs="?", help="Text to type or an existing .txt/.docx file path")
     parser.add_argument("--file", type=Path, help="Read text from a .txt or .docx file with DOCX normalization")
-    parser.add_argument("--target", choices=("keyboard", "word"), default="keyboard", help="Execution target: simulated keyboard typing or native Microsoft Word insertion")
+    parser.add_argument("--target", choices=("keyboard", "word"), default="keyboard", help="Execution target (default: keyboard): simulated typing or native Word DOCX insertion")
     parser.add_argument("--config", type=Path, default=argparse.SUPPRESS, help="Read and write settings from a JSON config file")
     parser.add_argument("--speed", type=float, default=argparse.SUPPRESS, help="Typing speed in words per minute")
     parser.add_argument("--countdown", type=float, default=argparse.SUPPRESS, help="Countdown before typing starts")
@@ -330,11 +332,14 @@ def _run_word_target(args: argparse.Namespace) -> int:
         except WordPreflightError as exc:
             raise SystemExit(str(exc)) from exc
 
-    print("[Word mode] Inserting DOCX natively into the active Microsoft Word document...")
-    print("Word mode does not type character-by-character, apply human timing, or introduce typos.")
-    print("Keyboard timing, profile, typo, progress, and hotkey settings are not applied in Word mode.")
+    print("[Word mode] Native DOCX insertion — not simulated typing.")
+    print("[Word mode] Keyboard-only settings are accepted for compatibility but are not applied.")
     try:
-        WordDocumentInserter().insert(source_path)
+        def report_preflight(_: object) -> None:
+            print("[Word mode] Checking destination: Word is running, the active document is editable, and the caret is valid.")
+            print(f"[Word mode] Inserting {source_path.name}...")
+
+        WordDocumentInserter().insert(source_path, on_preflight=report_preflight)
     except WordPreflightError as exc:
         raise SystemExit(str(exc)) from exc
     print("[Word mode] Native insertion complete. The document was not saved automatically.")

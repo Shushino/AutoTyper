@@ -87,7 +87,13 @@ collapsed caret in the editable main document body. It inserts the original
 DOCX natively; it does not type character-by-character, apply timing, or
 introduce typos. Timing, profile, typo, progress, and hotkey settings are not
 applied in this mode. AutoTyper does not launch Word, save the document, or
-change Word's AutoCorrect/AutoFormat settings.
+change Word's AutoCorrect/AutoFormat settings. See [Word mode](docs/word-mode.md)
+for the normal-privilege workflow and troubleshooting.
+
+| Target | Default | Behaviour | DOCX structure |
+| --- | --- | --- | --- |
+| `keyboard` | Yes | Simulated typing with human timing and optional typos | Linearized text/action stream |
+| `word` | No | Native insertion into an already-running Word document | Native paragraphs, lists, tables, merges, and supported styles |
 
 ## Hotkeys
 
