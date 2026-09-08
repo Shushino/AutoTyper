@@ -176,8 +176,19 @@ class HybridWordAdapter:
         if list_spec.kind == "bullet":
             list_format.ApplyBulletDefault()
         else:
-            list_format.ApplyNumberDefault()
+            self._start_numbered_list(list_format)
         self._active_list_group_id = list_spec.group_id
+
+    def _start_numbered_list(self, list_format: object) -> None:
+        """Apply the default numbered template as a fresh Word list."""
+        try:
+            list_format.ApplyNumberDefault()
+            list_format.ApplyListTemplate(list_format.ListTemplate, False)
+        except Exception as exc:
+            detail = self._com_error_detail(exc)
+            raise HybridWordError(
+                f"Microsoft Word failed while restarting a hybrid numbered list at 1: {detail}"
+            ) from exc
 
     def _reset_list_context(self, context: HybridWordContext) -> None:
         if self._active_list_group_id is None:

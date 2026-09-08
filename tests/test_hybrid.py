@@ -161,12 +161,16 @@ class _FakeSelection:
 class _FakeListFormat:
     def __init__(self) -> None:
         self.operations: list[str] = []
+        self.ListTemplate = "default-number-template"
 
     def ApplyBulletDefault(self) -> None:
         self.operations.append("bullet")
 
     def ApplyNumberDefault(self) -> None:
         self.operations.append("number")
+
+    def ApplyListTemplate(self, template, continue_previous) -> None:
+        self.operations.append(("restart", template, continue_previous))
 
     def RemoveNumbers(self) -> None:
         self.operations.append("remove")
@@ -245,7 +249,32 @@ def test_hybrid_adapter_isolates_number_and_bullet_list_groups() -> None:
     for paragraph in paragraphs:
         adapter.prepare_paragraph(context, paragraph)
 
-    assert app.Selection.ListFormat.operations == ["number", "remove", "bullet", "remove", "number"]
+    assert app.Selection.ListFormat.operations == [
+        "number",
+        ("restart", "default-number-template", False),
+        "remove",
+        "bullet",
+        "remove",
+        "number",
+        ("restart", "default-number-template", False),
+    ]
+
+
+def test_hybrid_adapter_reports_numbered_list_restart_failure() -> None:
+    app = _FakeApp()
+
+    def fail_restart(template, continue_previous) -> None:
+        raise RuntimeError("restart failed")
+
+    app.Selection.ListFormat.ApplyListTemplate = fail_restart
+    adapter = HybridWordAdapter(active_object=lambda _: app)
+    context = adapter.preflight()
+
+    with pytest.raises(HybridWordError, match="restarting a hybrid numbered list at 1"):
+        adapter.prepare_paragraph(
+            context,
+            HybridParagraph((HybridRun("numbered"),), list_spec=HybridListSpec("number", 1)),
+        )
 
 
 class _TableInsertionRange:
