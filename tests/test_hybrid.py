@@ -97,6 +97,27 @@ def test_hybrid_parser_extracts_run_typography_and_ignores_theme_colour(tmp_path
     assert runs[2].font_color is None
 
 
+def test_hybrid_parser_extracts_character_effects_and_normalizes_conflicts(tmp_path: Path) -> None:
+    path = tmp_path / "character-effects.docx"
+    doc = Document()
+    paragraph = doc.add_paragraph()
+    superscript = paragraph.add_run("sup")
+    superscript.font.superscript = True
+    subscript = paragraph.add_run("sub")
+    subscript.font.subscript = True
+    strike = paragraph.add_run("strike")
+    strike.font.strike = True
+    paragraph.add_run("normal")
+    doc.save(path)
+
+    runs = load_hybrid_plan(path).blocks[0].runs
+    assert (runs[0].superscript, runs[0].subscript, runs[0].strikethrough) == (True, False, False)
+    assert (runs[1].superscript, runs[1].subscript, runs[1].strikethrough) == (False, True, False)
+    assert (runs[2].superscript, runs[2].subscript, runs[2].strikethrough) == (False, False, True)
+    assert (runs[3].superscript, runs[3].subscript, runs[3].strikethrough) == (False, False, False)
+    assert HybridRun("invalid", superscript=True, subscript=True).subscript is False
+
+
 def test_hybrid_parser_assigns_logical_list_groups(tmp_path: Path) -> None:
     path = tmp_path / "list-groups.docx"
     doc = Document()
@@ -210,6 +231,9 @@ class _FakeFont:
         self.Name = "destination-font"
         self.Size = 10.0
         self.Color = 0
+        self.Superscript = False
+        self.Subscript = False
+        self.StrikeThrough = False
         self.fail_property: str | None = None
 
     def __setattr__(self, name, value) -> None:
@@ -262,7 +286,7 @@ def test_hybrid_adapter_applies_paragraph_and_run_formatting() -> None:
     app = _FakeApp()
     adapter = HybridWordAdapter(active_object=lambda _: app)
     context = adapter.preflight()
-    paragraph = HybridParagraph((HybridRun("text", bold=True, italic=True, underline=True, font_name="Aptos", font_size=13.5, font_color=0x123456),), style_name="Heading 1", alignment=1, left_indent=10.0, line_spacing=12.0)
+    paragraph = HybridParagraph((HybridRun("text", bold=True, italic=True, underline=True, font_name="Aptos", font_size=13.5, font_color=0x123456, superscript=True, strikethrough=True),), style_name="Heading 1", alignment=1, left_indent=10.0, line_spacing=12.0)
     adapter.prepare_paragraph(context, paragraph)
     adapter.prepare_run(context, paragraph.runs[0])
     assert app.Selection.Style == "Heading 1"
@@ -274,6 +298,9 @@ def test_hybrid_adapter_applies_paragraph_and_run_formatting() -> None:
     assert app.Selection.Font.Name == "Aptos"
     assert app.Selection.Font.Size == 13.5
     assert app.Selection.Font.Color == 0x563412
+    assert app.Selection.Font.Superscript is True
+    assert app.Selection.Font.Subscript is False
+    assert app.Selection.Font.StrikeThrough is True
 
 
 def test_hybrid_adapter_preserves_unspecified_run_typography() -> None:
@@ -289,6 +316,34 @@ def test_hybrid_adapter_preserves_unspecified_run_typography() -> None:
     assert app.Selection.Font.Name == "keep-font"
     assert app.Selection.Font.Size == 17.0
     assert app.Selection.Font.Color == 0xABCDEF
+
+
+def test_hybrid_adapter_resets_character_effects_between_runs() -> None:
+    app = _FakeApp()
+    adapter = HybridWordAdapter(active_object=lambda _: app)
+    context = adapter.preflight()
+
+    for run, expected in (
+        (HybridRun("normal"), (False, False, False)),
+        (HybridRun("super", superscript=True), (True, False, False)),
+        (HybridRun("normal",), (False, False, False)),
+        (HybridRun("sub", subscript=True), (False, True, False)),
+        (HybridRun("super", superscript=True), (True, False, False)),
+        (HybridRun("strike", strikethrough=True), (False, False, True)),
+        (HybridRun("normal"), (False, False, False)),
+    ):
+        adapter.prepare_run(context, run)
+        assert (app.Selection.Font.Superscript, app.Selection.Font.Subscript, app.Selection.Font.StrikeThrough) == expected
+
+
+def test_hybrid_adapter_reports_character_effect_com_failure() -> None:
+    app = _FakeApp()
+    app.Selection.Font.fail_property = "Superscript"
+    adapter = HybridWordAdapter(active_object=lambda _: app)
+    context = adapter.preflight()
+
+    with pytest.raises(HybridWordError, match="applying hybrid run typography"):
+        adapter.prepare_run(context, HybridRun("text", superscript=True))
 
 
 @pytest.mark.parametrize("font_size", [0, -1, float("nan"), float("inf"), float("-inf")])

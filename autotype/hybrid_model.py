@@ -9,6 +9,8 @@ from typing import TypeAlias
 
 @dataclass(frozen=True, slots=True)
 class HybridRun:
+    """One immutable hybrid typing run; superscript wins over subscript."""
+
     text: str
     bold: bool = False
     italic: bool = False
@@ -16,6 +18,13 @@ class HybridRun:
     font_name: str | None = None
     font_size: float | None = None
     font_color: int | None = None
+    superscript: bool = False
+    subscript: bool = False
+    strikethrough: bool = False
+
+    def __post_init__(self) -> None:
+        if self.superscript and self.subscript:
+            object.__setattr__(self, "subscript", False)
 
 
 @dataclass(frozen=True, slots=True)

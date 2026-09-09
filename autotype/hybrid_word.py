@@ -108,6 +108,9 @@ class HybridWordAdapter:
                 font.Size = font_size
             if run.font_color is not None:
                 font.Color = self._word_color(run.font_color)
+            font.Superscript = run.superscript
+            font.Subscript = run.subscript and not run.superscript
+            font.StrikeThrough = run.strikethrough
         except HybridWordError:
             raise
         except Exception as exc:

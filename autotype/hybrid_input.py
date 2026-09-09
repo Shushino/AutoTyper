@@ -103,6 +103,9 @@ def _paragraph(paragraph: Paragraph, list_spec: HybridListSpec | None = None) ->
             _font_name(run),
             _font_size_to_points(run.font.size),
             _font_color_to_rgb(run),
+            run.font.superscript is True,
+            run.font.subscript is True and run.font.superscript is not True,
+            run.font.strike is True,
         )
         for run in paragraph.runs
         if run.text
