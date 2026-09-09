@@ -38,10 +38,11 @@ def apply_human_behaviour(
     wpm: float = 45.0,
     typo_rate: float = 0.0,
     seed: int | None = None,
+    correction_policy: str = "mixed",
 ) -> list[Action]:
     selected_profile = get_profile(profile)
     rng = random.Random(seed)
-    typo_actions, _ = _apply_typo_behaviour_with_summary(actions, selected_profile, typo_rate, rng)
+    typo_actions, _ = _apply_typo_behaviour_with_summary(actions, selected_profile, typo_rate, rng, correction_policy)
     expanded: list[Action] = []
     for action in typo_actions:
         if isinstance(action, TypeText):

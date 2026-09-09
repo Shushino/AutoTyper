@@ -121,3 +121,70 @@ def test_stop_during_countdown_is_respected() -> None:
 
     assert controller.state == RunState.STOPPED
     assert executor.calls == []
+
+
+def test_pause_blocks_between_characters_until_resume() -> None:
+    typed: list[str] = []
+    first_character = threading.Event()
+    controller_ref: dict[str, RunController] = {}
+
+    class PausingExecutor:
+        def type_text(self, text: str) -> None:
+            typed.append(text)
+            if text == "a":
+                controller_ref["controller"].request_pause()
+                first_character.set()
+
+        def press_key(self, key: str) -> None:
+            raise AssertionError(f"unexpected key: {key}")
+
+    controller = RunController(
+        executor=PausingExecutor(),
+        config=TypingConfig(words_per_minute=300, countdown_seconds=0, poll_interval_seconds=0.01),
+    )
+    controller_ref["controller"] = controller
+    result_holder: dict[str, object] = {}
+    thread = threading.Thread(
+        target=lambda: result_holder.setdefault("result", controller.run([TypeText("ab")], countdown_seconds=0))
+    )
+    thread.start()
+    assert first_character.wait(timeout=1)
+    time.sleep(0.03)
+    assert typed == ["a"]
+    assert controller.state == RunState.PAUSED
+
+    controller.request_resume()
+    thread.join(timeout=1)
+    assert not thread.is_alive()
+    assert typed == ["a", "b"]
+    assert result_holder["result"].state == RunState.IDLE
+
+
+def test_stop_unblocks_a_paused_character_boundary() -> None:
+    typed: list[str] = []
+    first_character = threading.Event()
+    controller_ref: dict[str, RunController] = {}
+
+    class PausingExecutor:
+        def type_text(self, text: str) -> None:
+            typed.append(text)
+            if text == "a":
+                controller_ref["controller"].request_pause()
+                first_character.set()
+
+        def press_key(self, key: str) -> None:
+            raise AssertionError(f"unexpected key: {key}")
+
+    controller = RunController(
+        executor=PausingExecutor(),
+        config=TypingConfig(words_per_minute=300, countdown_seconds=0, poll_interval_seconds=0.01),
+    )
+    controller_ref["controller"] = controller
+    thread = threading.Thread(target=lambda: controller.run([TypeText("ab")], countdown_seconds=0))
+    thread.start()
+    assert first_character.wait(timeout=1)
+    controller.request_stop()
+    thread.join(timeout=1)
+    assert not thread.is_alive()
+    assert typed == ["a"]
+    assert controller.state == RunState.STOPPED

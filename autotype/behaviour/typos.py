@@ -57,8 +57,9 @@ def apply_typo_behaviour(
     profile: BehaviourProfile,
     typo_rate: float,
     rng: random.Random,
+    correction_policy: str = "mixed",
 ) -> list[Action]:
-    transformed, _ = _apply_typo_behaviour_with_summary(actions, profile, typo_rate, rng)
+    transformed, _ = _apply_typo_behaviour_with_summary(actions, profile, typo_rate, rng, correction_policy)
     return transformed
 
 
@@ -67,7 +68,10 @@ def _apply_typo_behaviour_with_summary(
     profile: BehaviourProfile,
     typo_rate: float,
     rng: random.Random,
+    correction_policy: str = "mixed",
 ) -> tuple[list[Action], TypoSummary]:
+    if correction_policy not in {"mixed", "immediate"}:
+        raise ValueError(f"Unknown correction policy: {correction_policy!r}")
     if typo_rate <= 0:
         return list(actions), TypoSummary()
 
@@ -75,7 +79,7 @@ def _apply_typo_behaviour_with_summary(
     injections = 0
     for action in actions:
         if isinstance(action, TypeText):
-            typed_actions, mutation_count = _expand_type_text(action.text, profile, typo_rate, rng)
+            typed_actions, mutation_count = _expand_type_text(action.text, profile, typo_rate, rng, correction_policy)
             expanded.extend(typed_actions)
             injections += mutation_count
         else:
@@ -88,6 +92,7 @@ def _expand_type_text(
     profile: BehaviourProfile,
     typo_rate: float,
     rng: random.Random,
+    correction_policy: str,
 ) -> tuple[list[Action], int]:
     transformed: list[Action] = []
     injections = 0
@@ -95,7 +100,7 @@ def _expand_type_text(
         if not is_word:
             transformed.append(TypeText(chunk))
             continue
-        word_actions, typo_applied = _expand_word(chunk, profile, typo_rate, rng)
+        word_actions, typo_applied = _expand_word(chunk, profile, typo_rate, rng, correction_policy)
         transformed.extend(word_actions)
         injections += typo_applied
     return transformed, injections
@@ -106,6 +111,7 @@ def _expand_word(
     profile: BehaviourProfile,
     typo_rate: float,
     rng: random.Random,
+    correction_policy: str = "mixed",
 ) -> tuple[list[Action], int]:
     effective_rate = min(0.10, max(0.0, typo_rate) * profile.typo_rate_multiplier)
     if len(word) < 2 or rng.random() >= effective_rate:
@@ -115,7 +121,7 @@ def _expand_word(
     if mutation is None:
         return [TypeText(word)], 0
 
-    if rng.random() < profile.immediate_correction_probability:
+    if correction_policy == "immediate" or rng.random() < profile.immediate_correction_probability:
         return _build_immediate_correction(mutation), 1
     return _build_delayed_correction(mutation), 1
 

@@ -7,13 +7,14 @@ from typing import Callable
 import zlib
 
 from .behaviour import apply_human_behaviour
+from .actions import KeyPress
 from .config import TypingConfig
 from .controller import RunController, RunResult, RunState
 from .executors import ActionExecutor
 from .focus import FocusError, WordFocusGuard
 from .hybrid_model import HybridDocumentPlan, HybridParagraph, HybridTable
 from .hybrid_word import HybridWordAdapter, HybridWordError
-from .hotkeys import WindowsHotkeyMonitor
+from .hotkeys import WindowsSuppressingHotkeyMonitor
 
 
 class HybridRunError(RuntimeError):
@@ -36,9 +37,10 @@ class HybridRunner:
         typing_config: TypingConfig,
         profile: str,
         seed: int | None,
+        typo_rate: float = 0.0,
         pause_key: str = "F8",
         stop_key: str = "F12",
-        hotkey_monitor_factory=WindowsHotkeyMonitor,
+        hotkey_monitor_factory=WindowsSuppressingHotkeyMonitor,
         controller_factory=RunController,
         status: Callable[[str], None] = print,
     ) -> None:
@@ -48,6 +50,7 @@ class HybridRunner:
         self._config = typing_config
         self._profile = profile
         self._seed = seed
+        self._typo_rate = typo_rate
         self._pause_key = pause_key
         self._stop_key = stop_key
         self._hotkey_monitor_factory = hotkey_monitor_factory
@@ -100,11 +103,18 @@ class HybridRunner:
             if first and completed == 0:
                 self._run_focus_handoff()
             self._focus.ensure_word_foreground()
+            lease = self._capture_lease(context, target)
+            actions = apply_human_behaviour(
+                run_to_actions(run.text),
+                profile=self._profile,
+                wpm=self._config.words_per_minute,
+                typo_rate=self._typo_rate,
+                seed=_segment_seed(self._seed, target, run_index),
+                correction_policy="immediate",
+            )
+            self._validate_actions(actions)
             if completed == 0:
                 self._status(f"[Hybrid mode] Typing {target}...")
-            # Hybrid deliberately disables typo injection until delayed correction
-            # is cursor-local and proven safe inside bounded Word targets.
-            actions = apply_human_behaviour(run_to_actions(run.text), profile=self._profile, wpm=self._config.words_per_minute, typo_rate=0.0, seed=_segment_seed(self._seed, target, run_index))
             resume_check = {"required": False, "paused": False}
 
             def status_callback(state: RunState, _: str) -> None:
@@ -113,7 +123,7 @@ class HybridRunner:
                 elif state == RunState.RUNNING and resume_check["paused"]:
                     resume_check["required"] = True
 
-            executor = _ResumeCheckedExecutor(self._executor, self._adapter, context, self._focus, resume_check)
+            executor = _ResumeCheckedExecutor(self._executor, self._adapter, context, self._focus, resume_check, lease, run)
             controller = self._controller_factory(executor=executor, config=self._config, status_callback=status_callback)
             monitor = self._hotkey_monitor_factory(
                 controller=controller,
@@ -121,8 +131,8 @@ class HybridRunner:
                 stop_key=self._stop_key,
                 poll_interval_seconds=self._config.poll_interval_seconds,
             )
-            monitor.start()
             try:
+                monitor.start()
                 result = controller.run(actions, countdown_seconds=0)
             finally:
                 monitor.close()
@@ -153,13 +163,41 @@ class HybridRunner:
             stop_key=self._stop_key,
             poll_interval_seconds=self._config.poll_interval_seconds,
         )
-        monitor.start()
         try:
+            monitor.start()
             result: RunResult = controller.run((), countdown_seconds=countdown)
         finally:
             monitor.close()
         if result.state == RunState.STOPPED:
             raise HybridRunError("Hybrid focus handoff was stopped by the emergency stop control.")
+
+    def _capture_lease(self, context, target: str):
+        capture = getattr(self._adapter, "capture_run_lease", None)
+        if capture is None:
+            return None
+        return capture(context, target)
+
+    @staticmethod
+    def _validate_actions(actions) -> None:
+        navigation_keys = {
+            "LEFT", "RIGHT", "UP", "DOWN", "HOME", "END",
+            "PAGEUP", "PAGEDOWN", "CTRL+LEFT", "CTRL+RIGHT",
+            "CTRL+SHIFT+LEFT", "CTRL+SHIFT+RIGHT",
+            "SHIFT+LEFT", "SHIFT+RIGHT", "CTRL+A",
+        }
+        for action in actions:
+            if not isinstance(action, KeyPress):
+                continue
+            key = action.key.upper()
+            parts = set(key.split("+"))
+            if key != "BACKSPACE" and parts.intersection({"BACKSPACE", "DELETE"}):
+                raise HybridRunError(
+                    f"Hybrid generated unsafe cursor-modifying action {action.key!r}; refusing to execute this segment."
+                )
+            if key in navigation_keys or parts.intersection({"LEFT", "RIGHT", "UP", "DOWN", "HOME", "END"}):
+                raise HybridRunError(
+                    f"Hybrid generated unsafe cursor-navigation action {action.key!r}; refusing to execute this segment."
+                )
 
     @staticmethod
     def _failure_message(last: str | None, exc: Exception) -> str:
@@ -179,23 +217,32 @@ def _segment_seed(seed: int | None, target: str, run_index: int) -> int | None:
 
 
 class _ResumeCheckedExecutor:
-    def __init__(self, delegate: ActionExecutor, adapter: HybridWordAdapter, context, focus: WordFocusGuard, resume_check) -> None:
+    def __init__(self, delegate: ActionExecutor, adapter: HybridWordAdapter, context, focus: WordFocusGuard, resume_check, lease, run) -> None:
         self._delegate = delegate
         self._adapter = adapter
         self._context = context
         self._focus = focus
         self._resume_check = resume_check
+        self._lease = lease
+        self._run = run
 
     def type_text(self, text: str) -> None:
         self._revalidate_if_needed()
         self._delegate.type_text(text)
+        if self._lease is not None:
+            self._lease.record_text(text)
 
     def press_key(self, key: str) -> None:
         self._revalidate_if_needed()
+        if self._lease is not None and key.upper() == "BACKSPACE":
+            self._lease.record_backspace()
         self._delegate.press_key(key)
 
     def _revalidate_if_needed(self) -> None:
         if self._resume_check["required"]:
-            self._adapter.revalidate(self._context)
             self._focus.ensure_word_foreground()
+            if self._lease is not None:
+                self._adapter.resume_run(self._context, self._lease, self._run)
+            else:
+                self._adapter.revalidate(self._context)
             self._resume_check["required"] = False

@@ -167,6 +167,37 @@ def test_typo_generation_is_seed_deterministic() -> None:
     assert first != third
 
 
+def test_default_correction_policy_remains_mixed() -> None:
+    source = [TypeText("the quick brown fox " * 8)]
+    implicit = apply_human_behaviour(source, profile="natural", wpm=45, typo_rate=0.10, seed=1234)
+    explicit = apply_human_behaviour(
+        source, profile="natural", wpm=45, typo_rate=0.10, seed=1234, correction_policy="mixed"
+    )
+    assert implicit == explicit
+
+
+def test_immediate_policy_uses_only_local_backspace_corrections() -> None:
+    source_text = "The quick brown fox jumps over the lazy dog. " * 8
+    actions = apply_human_behaviour(
+        [TypeText(source_text)], profile="careful", wpm=45, typo_rate=0.10, seed=2024,
+        correction_policy="immediate",
+    )
+    simulator = TextBufferSimulator()
+    simulator.apply(actions)
+
+    assert simulator.text == source_text
+    keypresses = [action.key for action in actions if isinstance(action, KeyPress)]
+    assert keypresses
+    assert set(keypresses) == {"BACKSPACE"}
+
+
+def test_immediate_policy_is_seed_deterministic() -> None:
+    source = [TypeText("the quick brown fox jumps over the lazy dog " * 10)]
+    first = apply_human_behaviour(source, typo_rate=0.10, seed=1234, correction_policy="immediate")
+    second = apply_human_behaviour(source, typo_rate=0.10, seed=1234, correction_policy="immediate")
+    assert first == second
+
+
 def test_qwerty_adjacency_map_is_valid_for_adjacent_typos() -> None:
     mutation = build_adjacent_typo("hello", random.Random(5))
 

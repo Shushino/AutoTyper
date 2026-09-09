@@ -9,14 +9,14 @@ from docx.enum.style import WD_STYLE_TYPE
 from docx.shared import Inches, Pt, RGBColor
 
 import autotype.cli as cli_module
-from autotype.actions import TypeText
+from autotype.actions import KeyPress, TypeText
 from autotype.config import TypingConfig
 from autotype.controller import RunResult, RunState
 from autotype.focus import FocusError, WordFocusGuard
 from autotype.hybrid_input import load_hybrid_plan
 from autotype.hybrid_model import HybridCell, HybridDocumentPlan, HybridListSpec, HybridParagraph, HybridRun, HybridTable, HybridUnsupported
 from autotype.hybrid_runner import HybridRunError, HybridRunner
-from autotype.hybrid_word import HybridWordAdapter, HybridWordError
+from autotype.hybrid_word import HybridRunLease, HybridWordAdapter, HybridWordError
 
 
 def _docx(tmp_path: Path) -> Path:
@@ -808,3 +808,108 @@ def test_hybrid_runner_reports_preflight_failure_without_typing() -> None:
     with pytest.raises(HybridRunError, match="no active document"):
         runner.run(HybridDocumentPlan(Path("source.docx"), (HybridParagraph((HybridRun("text"),)),)))
     assert not any(item.startswith("type:") for item in events)
+
+
+def test_hybrid_passes_typo_rate_and_immediate_policy(monkeypatch: pytest.MonkeyPatch) -> None:
+    import autotype.hybrid_runner as hybrid_runner_module
+
+    calls: list[dict] = []
+
+    def fake_behaviour(actions, **kwargs):
+        calls.append(kwargs)
+        return list(actions)
+
+    monkeypatch.setattr(hybrid_runner_module, "apply_human_behaviour", fake_behaviour)
+    events: list[str] = []
+    runner = HybridRunner(
+        adapter=_RecordingAdapter(events), focus_guard=WordFocusGuard(lambda: True), executor=_RecordingExecutor(events),
+        typing_config=TypingConfig(words_per_minute=1000), profile="natural", seed=7, typo_rate=0.2,
+        hotkey_monitor_factory=_NoopMonitor, status=lambda _: None,
+    )
+    runner.run(HybridDocumentPlan(Path("source.docx"), (HybridParagraph((HybridRun("text"),)),)))
+
+    assert calls[0]["typo_rate"] == 0.2
+    assert calls[0]["correction_policy"] == "immediate"
+
+
+def test_hybrid_rejects_unsafe_navigation_actions_before_typing(monkeypatch: pytest.MonkeyPatch) -> None:
+    import autotype.hybrid_runner as hybrid_runner_module
+
+    monkeypatch.setattr(
+        hybrid_runner_module,
+        "apply_human_behaviour",
+        lambda actions, **kwargs: [TypeText("x"), KeyPress("CTRL+SHIFT+LEFT")],
+    )
+    events: list[str] = []
+    runner = HybridRunner(
+        adapter=_RecordingAdapter(events), focus_guard=WordFocusGuard(lambda: True), executor=_RecordingExecutor(events),
+        typing_config=TypingConfig(words_per_minute=1000), profile="natural", seed=None,
+        hotkey_monitor_factory=_NoopMonitor, status=lambda _: None,
+    )
+
+    with pytest.raises(HybridRunError, match="unsafe cursor-navigation"):
+        runner.run(HybridDocumentPlan(Path("source.docx"), (HybridParagraph((HybridRun("text"),)),)))
+    assert not any(item.startswith("type:") for item in events)
+
+
+def test_hybrid_run_lease_tracks_local_text_and_rejects_cross_run_backspace() -> None:
+    lease = HybridRunLease(document=object(), target="paragraph 1", run_start=40, logical_caret=40)
+    lease.record_text("abc")
+    assert lease.rendered_text == "abc"
+    assert lease.logical_caret == 43
+
+    lease.record_backspace()
+    assert lease.rendered_text == "ab"
+    assert lease.logical_caret == 42
+    lease.record_backspace()
+    lease.record_backspace()
+    with pytest.raises(HybridWordError, match="owned run"):
+        lease.record_backspace()
+
+
+def test_hybrid_runner_closes_monitor_when_start_fails() -> None:
+    events: list[str] = []
+
+    class FailingMonitor:
+        def __init__(self, **kwargs) -> None:
+            events.append("monitor-created")
+
+        def start(self) -> None:
+            events.append("monitor-start")
+            raise OSError("hook install failed")
+
+        def close(self) -> None:
+            events.append("monitor-close")
+
+    runner = HybridRunner(
+        adapter=_RecordingAdapter(events), focus_guard=WordFocusGuard(lambda: True), executor=_RecordingExecutor(events),
+        typing_config=TypingConfig(words_per_minute=1000), profile="precise", seed=None,
+        hotkey_monitor_factory=FailingMonitor, status=lambda _: None,
+    )
+    with pytest.raises(HybridRunError, match="hook install failed"):
+        runner.run(HybridDocumentPlan(Path("source.docx"), (HybridParagraph((HybridRun("text"),)),)))
+    assert events[-3:] == ["monitor-created", "monitor-start", "monitor-close"]
+
+
+def test_hybrid_resume_requires_the_owned_collapsed_caret_and_text() -> None:
+    class RangedDocument(_FakeDocument):
+        def Range(self, start: int, end: int):
+            return type("Range", (), {"Text": "abc"[start - 10 : end - 10]})()
+
+    app = _FakeApp()
+    app.ActiveDocument = RangedDocument()
+    app.Selection.Document = app.ActiveDocument
+    app.Selection.Start = app.Selection.End = 10
+    adapter = HybridWordAdapter(active_object=lambda _: app)
+    context = adapter.preflight()
+    run = HybridRun("abc", bold=True)
+    lease = adapter.capture_run_lease(context, "paragraph 1")
+    lease.record_text("abc")
+
+    app.Selection.Start = app.Selection.End = 13
+    adapter.resume_run(context, lease, run)
+    assert app.Selection.Font.Bold is True
+
+    app.Selection.Start = app.Selection.End = 12
+    with pytest.raises(HybridWordError, match="caret moved outside"):
+        adapter.resume_run(context, lease, run)

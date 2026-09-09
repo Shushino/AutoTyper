@@ -366,7 +366,8 @@ def _run_hybrid_target(args: argparse.Namespace, settings: AppSettings) -> int:
         return 0
 
     print("[Hybrid mode] Experimental COM-assisted visible typing.")
-    print("[Hybrid mode] Typo simulation is disabled until cursor-local correction is proven safe.")
+    if settings.typo_rate > 0:
+        print("[Hybrid mode] Typo simulation uses immediate cursor-local correction.")
     print("[Hybrid mode] Checking destination...")
     try:
         runner = HybridRunner(
@@ -380,6 +381,7 @@ def _run_hybrid_target(args: argparse.Namespace, settings: AppSettings) -> int:
             ),
             profile=settings.profile,
             seed=args.seed,
+            typo_rate=settings.typo_rate,
             pause_key=args.pause_key,
             stop_key=args.stop_key,
         )

@@ -25,6 +25,31 @@ class HybridWordContext:
     selection: object
 
 
+@dataclass(slots=True)
+class HybridRunLease:
+    """The exact document position and text currently owned by Hybrid."""
+
+    document: object
+    target: str
+    run_start: int
+    logical_caret: int
+    rendered_text: str = ""
+    cell_start: int | None = None
+
+    def record_text(self, text: str) -> None:
+        normalized = _normalize_word_text(text)
+        self.rendered_text += normalized
+        self.logical_caret += len(normalized)
+
+    def record_backspace(self) -> None:
+        if self.logical_caret <= self.run_start or not self.rendered_text:
+            raise HybridWordError(
+                f"Hybrid backspace would leave the owned run at {self.target!r}."
+            )
+        self.rendered_text = self.rendered_text[:-1]
+        self.logical_caret -= 1
+
+
 class HybridWordAdapter:
     _WD_MAIN_TEXT_STORY = 1
     _WD_NO_PROTECTION = -1
@@ -117,6 +142,46 @@ class HybridWordAdapter:
             detail = self._com_error_detail(exc)
             raise HybridWordError(f"Microsoft Word failed while applying hybrid run typography: {detail}") from exc
 
+    def capture_run_lease(self, context: HybridWordContext, target: str) -> HybridRunLease:
+        selection = self._selection(context)
+        try:
+            if int(selection.Start) != int(selection.End):
+                raise HybridWordError("Hybrid requires a collapsed selection before typing a run.")
+            if int(selection.StoryType) != self._WD_MAIN_TEXT_STORY:
+                raise HybridWordError("The hybrid run target must be in the main document body.")
+            cell_start = None
+            if _selection_is_in_table(selection):
+                cell_start = self._cell_start(selection)
+            start = int(selection.Start)
+            return HybridRunLease(context.document, target, start, start, cell_start=cell_start)
+        except HybridWordError:
+            raise
+        except Exception as exc:
+            raise HybridWordError("Could not capture the owned hybrid run position.") from exc
+
+    def resume_run(self, context: HybridWordContext, lease: HybridRunLease, run: HybridRun) -> None:
+        selection = self._selection(context)
+        try:
+            if bool(context.document.ReadOnly) or int(context.document.ProtectionType) != self._WD_NO_PROTECTION:
+                raise HybridWordError("The active Word document is no longer editable.")
+            if int(selection.StoryType) != self._WD_MAIN_TEXT_STORY:
+                raise HybridWordError("The hybrid typing target is no longer in the main document body.")
+            if int(selection.Start) != int(selection.End):
+                raise HybridWordError("Hybrid resume stopped because Word has a non-collapsed selection.")
+            if int(selection.Start) != lease.logical_caret:
+                raise HybridWordError("Hybrid resume stopped because the Word caret moved outside the owned run.")
+            if lease.cell_start is not None:
+                if not _selection_is_in_table(selection) or self._cell_start(selection) != lease.cell_start:
+                    raise HybridWordError("Hybrid resume stopped because the active table cell changed.")
+            rendered = context.document.Range(lease.run_start, lease.logical_caret).Text
+            if _normalize_word_text(rendered) != lease.rendered_text:
+                raise HybridWordError("Hybrid resume stopped because the owned run text changed.")
+        except HybridWordError:
+            raise
+        except Exception as exc:
+            raise HybridWordError("Could not verify the owned hybrid caret after pause.") from exc
+        self.prepare_run(context, run)
+
     @staticmethod
     def _word_color(rgb: int) -> int:
         if not isinstance(rgb, int) or not 0 <= rgb <= 0xFFFFFF:
@@ -188,6 +253,11 @@ class HybridWordAdapter:
             if selected_name != expected_name:
                 raise HybridWordError("The active Word document changed during hybrid typing.")
         return selection
+
+    @staticmethod
+    def _cell_start(selection: object) -> int:
+        cell_range = selection.Range.Cells.Item(1).Range
+        return int(cell_range.Start)
 
     def _apply_list_context(self, selection: object, list_spec) -> None:
         list_format = selection.Range.ListFormat
@@ -286,3 +356,8 @@ class HybridWordAdapter:
                 fmt.LineSpacing = paragraph.line_spacing
         except Exception as exc:
             raise HybridWordError("Could not establish hybrid paragraph formatting.") from exc
+
+
+def _normalize_word_text(text: str) -> str:
+    """Normalize keyboard line breaks to Word's paragraph-mark representation."""
+    return text.replace("\r\n", "\r").replace("\n", "\r")

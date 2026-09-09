@@ -121,6 +121,8 @@ class RunController:
         for action in actions:
             if self._stop_event.is_set():
                 break
+            if not self._wait_until_runnable():
+                break
 
             if isinstance(action, TypeText):
                 typed_characters += self._type_text(action.text)
@@ -147,6 +149,8 @@ class RunController:
         for character in text:
             if self._stop_event.is_set():
                 break
+            if not self._wait_until_runnable():
+                break
 
             self._executor.type_text(character)
             typed += 1
@@ -170,6 +174,13 @@ class RunController:
             self._sleep(min(self._config.poll_interval_seconds, remaining))
 
         return not self._stop_event.is_set()
+
+    def _wait_until_runnable(self) -> bool:
+        if self._stop_event.is_set():
+            return False
+        if self.state == RunState.PAUSED:
+            return self._wait_for_resume()
+        return self.state == RunState.RUNNING and not self._stop_event.is_set()
 
     def _countdown(self, seconds: float) -> bool:
         deadline = self._monotonic() + seconds
