@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
 
 from docx import Document
+from docx.enum.dml import MSO_COLOR_TYPE
 from docx.oxml.ns import qn
 from docx.shared import Length
 from docx.table import Table
@@ -93,7 +95,15 @@ def _paragraph(paragraph: Paragraph, list_spec: HybridListSpec | None = None) ->
         style_name = None
     fmt = paragraph.paragraph_format
     runs = tuple(
-        HybridRun(run.text or "", bool(run.bold), bool(run.italic), bool(run.underline))
+        HybridRun(
+            run.text or "",
+            bool(run.bold),
+            bool(run.italic),
+            bool(run.underline),
+            _font_name(run),
+            _font_size_to_points(run.font.size),
+            _font_color_to_rgb(run),
+        )
         for run in paragraph.runs
         if run.text
     )
@@ -106,6 +116,32 @@ def _paragraph(paragraph: Paragraph, list_spec: HybridListSpec | None = None) ->
         line_spacing=_measurement_to_points(fmt.line_spacing) if isinstance(fmt.line_spacing, Length) else None,
         list_spec=list_spec,
     )
+
+
+def _font_name(run) -> str | None:
+    name = run.font.name
+    if not isinstance(name, str) or not name.strip():
+        return None
+    return name.strip()
+
+
+def _font_size_to_points(value) -> float | None:
+    if not isinstance(value, Length):
+        return None
+    points = float(value.pt)
+    if not math.isfinite(points) or points <= 0:
+        return None
+    return points
+
+
+def _font_color_to_rgb(run) -> int | None:
+    color = run.font.color
+    if color.type != MSO_COLOR_TYPE.RGB:
+        return None
+    rgb = color.rgb
+    if rgb is None or len(rgb) != 3 or any(not isinstance(channel, int) or not 0 <= channel <= 255 for channel in rgb):
+        return None
+    return (rgb[0] << 16) | (rgb[1] << 8) | rgb[2]
 
 
 def _list_kind(paragraph: Paragraph) -> str | None:

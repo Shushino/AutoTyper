@@ -4,8 +4,9 @@ from pathlib import Path
 
 import pytest
 from docx import Document
+from docx.enum.dml import MSO_THEME_COLOR_INDEX
 from docx.enum.style import WD_STYLE_TYPE
-from docx.shared import Inches, Pt
+from docx.shared import Inches, Pt, RGBColor
 
 import autotype.cli as cli_module
 from autotype.actions import TypeText
@@ -69,6 +70,31 @@ def test_hybrid_parser_converts_docx_measurements_to_points(tmp_path: Path) -> N
     assert exact_plan.line_spacing == 12.0
     assert relative_plan.line_spacing is None
     assert table_plan.column_widths == (72.0, 144.0)
+
+
+def test_hybrid_parser_extracts_run_typography_and_ignores_theme_colour(tmp_path: Path) -> None:
+    path = tmp_path / "run-typography.docx"
+    doc = Document()
+    paragraph = doc.add_paragraph()
+    full = paragraph.add_run("Full")
+    full.bold = True
+    full.italic = True
+    full.underline = True
+    full.font.name = "Aptos"
+    full.font.size = Pt(13)
+    full.font.color.rgb = RGBColor(0x12, 0x34, 0x56)
+    plain = paragraph.add_run("Plain")
+    theme = paragraph.add_run("Theme")
+    theme.font.color.theme_color = MSO_THEME_COLOR_INDEX.ACCENT_1
+    doc.save(path)
+
+    runs = load_hybrid_plan(path).blocks[0].runs
+    assert runs[0].font_name == "Aptos"
+    assert runs[0].font_size == 13.0
+    assert runs[0].font_color == 0x123456
+    assert runs[0].bold and runs[0].italic and runs[0].underline
+    assert runs[1].font_name is None and runs[1].font_size is None and runs[1].font_color is None
+    assert runs[2].font_color is None
 
 
 def test_hybrid_parser_assigns_logical_list_groups(tmp_path: Path) -> None:
@@ -149,7 +175,7 @@ class _FakeSelection:
     def __init__(self, document) -> None:
         self.Document = document
         self.Range = self
-        self.Font = type("Font", (), {})()
+        self.Font = _FakeFont()
         self.ParagraphFormat = type("Format", (), {})()
         self.ListFormat = _FakeListFormat()
         self.typed_paragraphs = 0
@@ -174,6 +200,22 @@ class _FakeListFormat:
 
     def RemoveNumbers(self) -> None:
         self.operations.append("remove")
+
+
+class _FakeFont:
+    def __init__(self) -> None:
+        self.Bold = False
+        self.Italic = False
+        self.Underline = False
+        self.Name = "destination-font"
+        self.Size = 10.0
+        self.Color = 0
+        self.fail_property: str | None = None
+
+    def __setattr__(self, name, value) -> None:
+        if name != "fail_property" and getattr(self, "fail_property", None) == name:
+            raise RuntimeError(f"failed {name}")
+        object.__setattr__(self, name, value)
 
 
 class _FakeDocument:
@@ -220,7 +262,7 @@ def test_hybrid_adapter_applies_paragraph_and_run_formatting() -> None:
     app = _FakeApp()
     adapter = HybridWordAdapter(active_object=lambda _: app)
     context = adapter.preflight()
-    paragraph = HybridParagraph((HybridRun("text", bold=True, italic=True, underline=True),), style_name="Heading 1", alignment=1, left_indent=10.0, line_spacing=12.0)
+    paragraph = HybridParagraph((HybridRun("text", bold=True, italic=True, underline=True, font_name="Aptos", font_size=13.5, font_color=0x123456),), style_name="Heading 1", alignment=1, left_indent=10.0, line_spacing=12.0)
     adapter.prepare_paragraph(context, paragraph)
     adapter.prepare_run(context, paragraph.runs[0])
     assert app.Selection.Style == "Heading 1"
@@ -229,6 +271,44 @@ def test_hybrid_adapter_applies_paragraph_and_run_formatting() -> None:
     assert app.Selection.Font.Bold is True
     assert app.Selection.Font.Italic is True
     assert app.Selection.Font.Underline is True
+    assert app.Selection.Font.Name == "Aptos"
+    assert app.Selection.Font.Size == 13.5
+    assert app.Selection.Font.Color == 0x563412
+
+
+def test_hybrid_adapter_preserves_unspecified_run_typography() -> None:
+    app = _FakeApp()
+    app.Selection.Font.Name = "keep-font"
+    app.Selection.Font.Size = 17.0
+    app.Selection.Font.Color = 0xABCDEF
+    adapter = HybridWordAdapter(active_object=lambda _: app)
+    context = adapter.preflight()
+
+    adapter.prepare_run(context, HybridRun("text"))
+
+    assert app.Selection.Font.Name == "keep-font"
+    assert app.Selection.Font.Size == 17.0
+    assert app.Selection.Font.Color == 0xABCDEF
+
+
+@pytest.mark.parametrize("font_size", [0, -1, float("nan"), float("inf"), float("-inf")])
+def test_hybrid_adapter_rejects_invalid_run_font_size(font_size: float) -> None:
+    app = _FakeApp()
+    adapter = HybridWordAdapter(active_object=lambda _: app)
+    context = adapter.preflight()
+
+    with pytest.raises(HybridWordError, match="invalid font size"):
+        adapter.prepare_run(context, HybridRun("text", font_size=font_size))
+
+
+def test_hybrid_adapter_reports_run_typography_com_failure() -> None:
+    app = _FakeApp()
+    app.Selection.Font.fail_property = "Color"
+    adapter = HybridWordAdapter(active_object=lambda _: app)
+    context = adapter.preflight()
+
+    with pytest.raises(HybridWordError, match="applying hybrid run typography"):
+        adapter.prepare_run(context, HybridRun("text", font_color=0xFF0000))
 
 
 def test_hybrid_adapter_isolates_number_and_bullet_list_groups() -> None:

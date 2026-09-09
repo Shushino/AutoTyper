@@ -98,6 +98,27 @@ class HybridWordAdapter:
         font.Bold = run.bold
         font.Italic = run.italic
         font.Underline = run.underline
+        try:
+            if run.font_name is not None:
+                font.Name = run.font_name
+            if run.font_size is not None:
+                font_size = float(run.font_size)
+                if not math.isfinite(font_size) or font_size <= 0:
+                    raise HybridWordError(f"Hybrid run has invalid font size {run.font_size!r} pt.")
+                font.Size = font_size
+            if run.font_color is not None:
+                font.Color = self._word_color(run.font_color)
+        except HybridWordError:
+            raise
+        except Exception as exc:
+            detail = self._com_error_detail(exc)
+            raise HybridWordError(f"Microsoft Word failed while applying hybrid run typography: {detail}") from exc
+
+    @staticmethod
+    def _word_color(rgb: int) -> int:
+        if not isinstance(rgb, int) or not 0 <= rgb <= 0xFFFFFF:
+            raise HybridWordError(f"Hybrid run has invalid RGB font colour {rgb!r}.")
+        return ((rgb & 0xFF) << 16) | (rgb & 0x00FF00) | ((rgb >> 16) & 0xFF)
 
     def advance_paragraph(self, context: HybridWordContext) -> None:
         self._selection(context).TypeParagraph()

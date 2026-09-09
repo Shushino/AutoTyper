@@ -13,6 +13,9 @@ class HybridRun:
     bold: bool = False
     italic: bool = False
     underline: bool = False
+    font_name: str | None = None
+    font_size: float | None = None
+    font_color: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
