@@ -91,7 +91,7 @@ def test_unknown_keys_are_rejected(tmp_path: Path) -> None:
 
 def test_unsupported_version_is_rejected(tmp_path: Path) -> None:
     path = tmp_path / "config.json"
-    _write_config(path, {"version": 2})
+    _write_config(path, {"version": 3})
 
     with pytest.raises(ConfigError, match="Unsupported configuration version"):
         load_settings(path)
@@ -131,10 +131,58 @@ def test_save_settings_writes_versioned_json(tmp_path: Path) -> None:
     save_settings(path, settings)
 
     assert json.loads(path.read_text(encoding="utf-8")) == {
-        "version": 1,
+        "version": 2,
         "profile": "precise",
         "speed": 110.0,
         "typo_rate": 0.05,
         "countdown": 3.0,
         "progress": True,
+        "hotkeys": {"pause": "PAUSE", "stop": "CTRL+PAUSE"},
     }
+
+
+def test_version_two_hotkeys_round_trip_and_partial_values(tmp_path: Path) -> None:
+    path = tmp_path / "config.json"
+    _write_config(path, {"version": 2, "hotkeys": {"pause": "F9"}})
+
+    settings = load_settings(path)
+
+    assert settings is not None
+    assert settings.hotkeys == HotkeyConfig(pause_key="F9", stop_key="CTRL+PAUSE")
+
+    save_settings(path, settings)
+    assert json.loads(path.read_text(encoding="utf-8"))["hotkeys"] == {
+        "pause": "F9",
+        "stop": "CTRL+PAUSE",
+    }
+
+
+def test_version_one_configuration_gets_default_hotkeys(tmp_path: Path) -> None:
+    path = tmp_path / "config.json"
+    _write_config(path, {"version": 1, "speed": 55})
+
+    settings = load_settings(path)
+
+    assert settings is not None
+    assert settings.hotkeys == HotkeyConfig()
+
+
+def test_version_two_missing_hotkeys_gets_default_hotkeys(tmp_path: Path) -> None:
+    path = tmp_path / "config.json"
+    _write_config(path, {"version": 2, "speed": 55})
+
+    settings = load_settings(path)
+
+    assert settings is not None
+    assert settings.hotkeys == HotkeyConfig()
+
+
+def test_risky_hotkeys_warn_without_blocking(tmp_path: Path) -> None:
+    path = tmp_path / "config.json"
+    _write_config(path, {"version": 2, "hotkeys": {"pause": "CTRL+B", "stop": "F9"}})
+
+    with pytest.warns(RuntimeWarning, match="generated input"):
+        settings = load_settings(path)
+
+    assert settings is not None
+    assert settings.hotkeys.pause_key == "CTRL+B"

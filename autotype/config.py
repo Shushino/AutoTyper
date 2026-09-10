@@ -3,15 +3,17 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import warnings
 from dataclasses import dataclass
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Mapping
 
 from .behaviour.profiles import get_profile
+from .keybindings import parse_hotkey_binding, risky_binding_reason, same_binding
 
 
-CONFIG_SCHEMA_VERSION = 1
+CONFIG_SCHEMA_VERSION = 2
 DEFAULT_PROFILE = "natural"
 DEFAULT_SPEED = 40.0
 DEFAULT_TYPO_RATE = 0.0
@@ -26,12 +28,37 @@ class ConfigError(ValueError):
 
 
 @dataclass(frozen=True, slots=True)
+class HotkeyConfig:
+    pause_key: str = DEFAULT_PAUSE_KEY
+    stop_key: str = DEFAULT_STOP_KEY
+
+    def __post_init__(self) -> None:
+        try:
+            pause = parse_hotkey_binding(self.pause_key)
+            stop = parse_hotkey_binding(self.stop_key)
+        except ValueError as exc:
+            raise ConfigError(str(exc)) from exc
+        if same_binding(pause, stop):
+            raise ConfigError("pause_key and stop_key must be different")
+        for name, binding in (("pause", pause), ("stop", stop)):
+            reason = risky_binding_reason(binding)
+            if reason is not None:
+                warnings.warn(
+                    f"Risky {name} hotkey {getattr(self, name + '_key')!r}: {reason}. "
+                    "The binding is allowed, but keyboard-mode polling cannot distinguish it from matching generated input.",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+
+
+@dataclass(frozen=True, slots=True)
 class AppSettings:
     profile: str = DEFAULT_PROFILE
     speed: float = DEFAULT_SPEED
     typo_rate: float = DEFAULT_TYPO_RATE
     countdown: float = DEFAULT_COUNTDOWN
     progress: bool = DEFAULT_PROGRESS
+    hotkeys: HotkeyConfig = HotkeyConfig()
 
     def __post_init__(self) -> None:
         _validate_profile(self.profile)
@@ -48,6 +75,10 @@ class AppSettings:
             "typo_rate": self.typo_rate,
             "countdown": self.countdown,
             "progress": self.progress,
+            "hotkeys": {
+                "pause": self.hotkeys.pause_key,
+                "stop": self.hotkeys.stop_key,
+            },
         }
 
     def with_overrides(self, **overrides: object) -> "AppSettings":
@@ -71,18 +102,6 @@ class TypingConfig:
     @property
     def seconds_per_character(self) -> float:
         return 60.0 / (self.words_per_minute * 5.0)
-
-
-@dataclass(frozen=True, slots=True)
-class HotkeyConfig:
-    pause_key: str = DEFAULT_PAUSE_KEY
-    stop_key: str = DEFAULT_STOP_KEY
-
-    def __post_init__(self) -> None:
-        if not self.pause_key:
-            raise ValueError("pause_key must not be empty")
-        if not self.stop_key:
-            raise ValueError("stop_key must not be empty")
 
 
 def default_config_path() -> Path:
@@ -144,13 +163,15 @@ def _settings_from_mapping(payload: Any, *, source: Path) -> AppSettings:
     if not isinstance(payload, Mapping):
         raise ConfigError(f"Configuration file must contain a JSON object: {source}")
 
+    version = payload.get("version")
+    _validate_version(version, source=source)
+
     allowed_keys = {"version", "profile", "speed", "typo_rate", "countdown", "progress"}
+    if version == 2:
+        allowed_keys.add("hotkeys")
     unknown_keys = sorted(set(payload) - allowed_keys)
     if unknown_keys:
         raise ConfigError(f"Unknown configuration keys in {source}: {', '.join(unknown_keys)}")
-
-    version = payload.get("version")
-    _validate_version(version, source=source)
 
     settings = DEFAULT_SETTINGS
     if "profile" in payload:
@@ -163,6 +184,8 @@ def _settings_from_mapping(payload: Any, *, source: Path) -> AppSettings:
         settings = settings.with_overrides(countdown=_parse_non_negative_number("countdown", payload["countdown"], source=source))
     if "progress" in payload:
         settings = settings.with_overrides(progress=_parse_bool("progress", payload["progress"], source=source))
+    if version == 2 and "hotkeys" in payload:
+        settings = settings.with_overrides(hotkeys=_parse_hotkeys(payload["hotkeys"], source=source))
 
     return settings
 
@@ -170,8 +193,23 @@ def _settings_from_mapping(payload: Any, *, source: Path) -> AppSettings:
 def _validate_version(version: Any, *, source: Path) -> None:
     if isinstance(version, bool) or not isinstance(version, int):
         raise ConfigError(f"Configuration version must be an integer in {source}")
-    if version != CONFIG_SCHEMA_VERSION:
+    if version not in {1, 2}:
         raise ConfigError(f"Unsupported configuration version in {source}: {version}")
+
+
+def _parse_hotkeys(value: Any, *, source: Path) -> HotkeyConfig:
+    if not isinstance(value, Mapping):
+        raise ConfigError(f"Invalid value for hotkeys in {source}: expected an object")
+    unknown_keys = sorted(set(value) - {"pause", "stop"})
+    if unknown_keys:
+        raise ConfigError(f"Unknown hotkey keys in {source}: {', '.join(unknown_keys)}")
+    try:
+        return HotkeyConfig(
+            pause_key=value.get("pause", DEFAULT_PAUSE_KEY),
+            stop_key=value.get("stop", DEFAULT_STOP_KEY),
+        )
+    except (ConfigError, TypeError, ValueError) as exc:
+        raise ConfigError(f"Invalid hotkeys in {source}: {exc}") from exc
 
 
 def _parse_profile(value: Any, *, source: Path) -> str:

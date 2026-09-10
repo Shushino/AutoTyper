@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import autotype.cli as cli_module
 from docx import Document
@@ -97,8 +98,8 @@ def test_parser_accepts_text_and_controls() -> None:
 
 def test_parser_uses_word_safe_default_controls() -> None:
     args = build_parser().parse_args(["hello"])
-    assert args.pause_key == "PAUSE"
-    assert args.stop_key == "CTRL+PAUSE"
+    assert not hasattr(args, "pause_key")
+    assert not hasattr(args, "stop_key")
 
 
 def test_parser_help_includes_examples_and_progress_flag() -> None:
@@ -159,12 +160,13 @@ def test_show_config_prints_effective_defaults_and_skips_execution(monkeypatch, 
     captured = capsys.readouterr()
     assert exit_code == 0
     assert json.loads(captured.out) == {
-        "version": 1,
+        "version": 2,
         "profile": "natural",
         "speed": 40.0,
         "typo_rate": 0.0,
         "countdown": 5.0,
         "progress": False,
+        "hotkeys": {"pause": "PAUSE", "stop": "CTRL+PAUSE"},
     }
 
 
@@ -173,12 +175,13 @@ def test_config_values_override_built_in_defaults_and_cli_overrides_config(tmp_p
     path.write_text(
         json.dumps(
             {
-                "version": 1,
+                "version": 2,
                 "profile": "careful",
                 "speed": 75,
                 "typo_rate": 0.04,
                 "countdown": 2,
                 "progress": True,
+                "hotkeys": {"pause": "F9", "stop": "CTRL+SHIFT+F9"},
             }
         ),
         encoding="utf-8",
@@ -190,18 +193,23 @@ def test_config_values_override_built_in_defaults_and_cli_overrides_config(tmp_p
         "--speed",
         "90",
         "--no-progress",
+        "--pause-key",
+        "F10",
+        "--stop-key",
+        "CTRL+SHIFT+F10",
         "--show-config",
     ])
 
     captured = capsys.readouterr()
     assert exit_code == 0
     assert json.loads(captured.out) == {
-        "version": 1,
+        "version": 2,
         "profile": "careful",
         "speed": 90.0,
         "typo_rate": 0.04,
         "countdown": 2.0,
         "progress": False,
+        "hotkeys": {"pause": "F10", "stop": "CTRL+SHIFT+F10"},
     }
 
 
@@ -220,13 +228,57 @@ def test_save_config_persists_effective_settings(tmp_path: Path, capsys) -> None
     assert exit_code == 0
     assert "Saved configuration to" in captured.out
     assert json.loads(path.read_text(encoding="utf-8")) == {
-        "version": 1,
+        "version": 2,
         "profile": "natural",
         "speed": 110.0,
         "typo_rate": 0.0,
         "countdown": 5.0,
         "progress": False,
+        "hotkeys": {"pause": "PAUSE", "stop": "CTRL+PAUSE"},
     }
+
+
+def test_keyboard_and_hybrid_receive_same_resolved_hotkeys(monkeypatch, tmp_path: Path, capsys) -> None:
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps({
+            "version": 2,
+            "hotkeys": {"pause": "F9", "stop": "CTRL+SHIFT+F9"},
+        }),
+        encoding="utf-8",
+    )
+    source_path = tmp_path / "source.docx"
+    _write_formatted_docx(source_path)
+    received: list[tuple[str, str]] = []
+
+    class DummyMonitor:
+        def __init__(self, *, pause_key, stop_key, **kwargs) -> None:
+            received.append((pause_key, stop_key))
+
+        def start(self) -> None:
+            return None
+
+        def close(self) -> None:
+            return None
+
+    class DummyRunner:
+        def __init__(self, *, pause_key, stop_key, **kwargs) -> None:
+            received.append((pause_key, stop_key))
+
+        def run(self, plan):
+            return SimpleNamespace(completed_targets=0)
+
+    monkeypatch.setattr(cli_module, "WindowsExecutor", MockExecutor)
+    monkeypatch.setattr(cli_module, "WindowsHotkeyMonitor", DummyMonitor)
+    monkeypatch.setattr(cli_module, "HybridRunner", DummyRunner)
+
+    assert main(["hello", "--config", str(config_path), "--countdown", "0"]) == 0
+    assert main([
+        "--file", str(source_path), "--target", "hybrid", "--config", str(config_path),
+    ]) == 0
+
+    assert received == [("F9", "CTRL+SHIFT+F9"), ("F9", "CTRL+SHIFT+F9")]
+    capsys.readouterr()
 
 
 def test_missing_explicit_config_fails(tmp_path: Path) -> None:

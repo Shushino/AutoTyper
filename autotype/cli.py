@@ -17,8 +17,6 @@ from .config import (
     DEFAULT_SETTINGS,
     HotkeyConfig,
     TypingConfig,
-    DEFAULT_PAUSE_KEY,
-    DEFAULT_STOP_KEY,
     default_config_path,
     load_settings,
     save_settings,
@@ -74,8 +72,8 @@ def build_parser() -> argparse.ArgumentParser:
     progress_group.add_argument("--no-progress", dest="progress", action="store_false", default=argparse.SUPPRESS, help="Disable live progress while typing")
     parser.add_argument("--show-config", action="store_true", help="Print the effective configuration and exit")
     parser.add_argument("--save-config", action="store_true", help="Save the effective configuration and exit")
-    parser.add_argument("--pause-key", default=DEFAULT_PAUSE_KEY, help="Hotkey for pause/resume (default: PAUSE)")
-    parser.add_argument("--stop-key", default=DEFAULT_STOP_KEY, help="Hotkey for emergency stop (default: CTRL+PAUSE)")
+    parser.add_argument("--pause-key", default=argparse.SUPPRESS, help="Hotkey for pause/resume (default: PAUSE; config file may override)")
+    parser.add_argument("--stop-key", default=argparse.SUPPRESS, help="Hotkey for emergency stop (default: CTRL+PAUSE; config file may override)")
     parser.add_argument("--poll-interval", type=float, default=0.05, help="Hotkey polling interval in seconds")
     return parser
 
@@ -106,9 +104,15 @@ def _settings_from_namespace(args: argparse.Namespace, base: AppSettings) -> App
     for field_name in ("profile", "speed", "typo_rate", "countdown", "progress"):
         if hasattr(args, field_name):
             overrides[field_name] = getattr(args, field_name)
-    if not overrides:
-        return base
-    return base.with_overrides(**overrides)
+    settings = base.with_overrides(**overrides) if overrides else base
+    if hasattr(args, "pause_key") or hasattr(args, "stop_key"):
+        settings = settings.with_overrides(
+            hotkeys=HotkeyConfig(
+                pause_key=getattr(args, "pause_key", settings.hotkeys.pause_key),
+                stop_key=getattr(args, "stop_key", settings.hotkeys.stop_key),
+            )
+        )
+    return settings
 
 
 def _load_configured_settings(args: argparse.Namespace) -> tuple[AppSettings, Path | None]:
@@ -270,7 +274,7 @@ def main(argv: list[str] | None = None) -> int:
         countdown_seconds=settings.countdown,
         poll_interval_seconds=args.poll_interval,
     )
-    hotkey_config = HotkeyConfig(pause_key=args.pause_key, stop_key=args.stop_key)
+    hotkey_config = settings.hotkeys
     actions = build_actions_from_content(content)
 
     if args.dry_run:
@@ -384,8 +388,8 @@ def _run_hybrid_target(args: argparse.Namespace, settings: AppSettings) -> int:
             profile=settings.profile,
             seed=args.seed,
             typo_rate=settings.typo_rate,
-            pause_key=args.pause_key,
-            stop_key=args.stop_key,
+            pause_key=settings.hotkeys.pause_key,
+            stop_key=settings.hotkeys.stop_key,
         )
         result = runner.run(plan)
     except (HybridRunError, OSError) as exc:

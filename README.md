@@ -148,6 +148,7 @@ Supported persisted settings:
 - `typo_rate`
 - `countdown`
 - `progress`
+- `hotkeys.pause` and `hotkeys.stop`
 
 Precedence is:
 
@@ -158,6 +159,10 @@ Precedence is:
 `--show-config` prints the effective merged configuration.
 `--save-config` validates the effective configuration and writes it back atomically.
 `--config` can point to an alternate JSON file when you want to load or save settings somewhere else.
+
+For example, `autotype --pause-key F9 --stop-key CTRL+SHIFT+F9 --save-config`
+persists custom controls. CLI hotkey values apply only to that invocation unless
+`--save-config` is also supplied.
 
 ## Input Normalization
 

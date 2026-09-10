@@ -15,6 +15,7 @@ from autotype.hotkeys import (
     _WPARAM,
     _KBDLLHOOKSTRUCT,
     _configure_win32_api,
+    _parse_binding,
 )
 
 
@@ -119,6 +120,22 @@ def test_polling_monitor_requires_exact_pause_chord(monkeypatch: pytest.MonkeyPa
     states[0x11] = 0x8000
     assert monitor._binding_down(monitor._pause_binding) is False
     assert monitor._binding_down(monitor._stop_binding) is True
+
+
+def test_binding_parser_preserves_f9_and_modifier_chord() -> None:
+    pause = _parse_binding("f9")
+    stop = _parse_binding("CTRL+SHIFT+F9")
+
+    assert pause.key == "F9"
+    assert pause.modifiers == frozenset()
+    assert stop.key == "F9"
+    assert stop.modifiers == frozenset({"CTRL", "SHIFT"})
+
+
+@pytest.mark.parametrize("value", ["", "CTRL++F9", "CTRL+CTRL+F9", "CTRL+UNKNOWN"])
+def test_binding_parser_rejects_invalid_bindings(value: str) -> None:
+    with pytest.raises(ValueError):
+        _parse_binding(value)
 
 
 def test_hybrid_hook_ignores_key_repeat_until_keyup() -> None:

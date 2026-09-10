@@ -10,6 +10,13 @@ from typing import Callable
 
 from .controller import RunController
 from .config import DEFAULT_PAUSE_KEY, DEFAULT_STOP_KEY
+from .keybindings import (
+    MODIFIER_EVENT_VK,
+    MODIFIER_VK,
+    HotkeyBinding,
+    parse_hotkey_binding,
+    same_binding,
+)
 
 
 if os.name == "nt":
@@ -17,42 +24,6 @@ if os.name == "nt":
 else:  # pragma: no cover - non-Windows import safety
     _USER32 = None
 
-
-_VK_MAP: dict[str, int] = {
-    "F1": 0x70,
-    "F2": 0x71,
-    "F3": 0x72,
-    "F4": 0x73,
-    "F5": 0x74,
-    "F6": 0x75,
-    "F7": 0x76,
-    "F8": 0x77,
-    "F9": 0x78,
-    "F10": 0x79,
-    "F11": 0x7A,
-    "F12": 0x7B,
-    "F13": 0x7C,
-    "F14": 0x7D,
-    "F15": 0x7E,
-    "F16": 0x7F,
-    "F17": 0x80,
-    "F18": 0x81,
-    "F19": 0x82,
-    "F20": 0x83,
-    "F21": 0x84,
-    "F22": 0x85,
-    "F23": 0x86,
-    "F24": 0x87,
-    "PAUSE": 0x13,
-}
-
-_MODIFIER_VK = {"CTRL": 0x11, "ALT": 0x12, "SHIFT": 0x10}
-_MODIFIER_NAMES = frozenset(_MODIFIER_VK)
-_MODIFIER_EVENT_VK = {
-    0x11: "CTRL", 0xA2: "CTRL", 0xA3: "CTRL",
-    0x12: "ALT", 0xA4: "ALT", 0xA5: "ALT",
-    0x10: "SHIFT", 0xA0: "SHIFT", 0xA1: "SHIFT",
-}
 
 WH_KEYBOARD_LL = 13
 WM_KEYDOWN = 0x0100
@@ -70,34 +41,15 @@ _HOOKPROC = ctypes.WINFUNCTYPE(_LRESULT, ctypes.c_int, _WPARAM, _LPARAM)
 
 
 def _resolve_vk(key: str) -> int:
-    normalized = key.strip().upper()
-    if normalized not in _VK_MAP:
-        raise ValueError(f"Unsupported hotkey: {key!r}")
-    return _VK_MAP[normalized]
-
-
-@dataclass(frozen=True, slots=True)
-class HotkeyBinding:
-    key: str
-    vk: int
-    modifiers: frozenset[str]
+    return parse_hotkey_binding(key).vk
 
 
 def _parse_binding(value: str) -> HotkeyBinding:
-    parts = [part.strip().upper() for part in value.split("+")]
-    if not value.strip() or any(not part for part in parts):
-        raise ValueError(f"Invalid hotkey binding: {value!r}")
-    base = parts[-1]
-    modifiers = parts[:-1]
-    if base in _MODIFIER_NAMES or base not in _VK_MAP:
-        raise ValueError(f"Unsupported hotkey binding: {value!r}")
-    if len(set(modifiers)) != len(modifiers) or any(item not in _MODIFIER_NAMES for item in modifiers):
-        raise ValueError(f"Invalid hotkey modifiers: {value!r}")
-    return HotkeyBinding(base, _VK_MAP[base], frozenset(modifiers))
+    return parse_hotkey_binding(value)
 
 
 def _same_binding(left: HotkeyBinding, right: HotkeyBinding) -> bool:
-    return left.vk == right.vk and left.modifiers == right.modifiers
+    return same_binding(left, right)
 
 
 @dataclass
@@ -155,7 +107,7 @@ class WindowsHotkeyMonitor:
         return bool(_USER32.GetAsyncKeyState(vk) & 0x8000)
 
     def _binding_down(self, binding: HotkeyBinding) -> bool:
-        active = {name for name, vk in _MODIFIER_VK.items() if self._key_down(vk)}
+        active = {name for name, vk in MODIFIER_VK.items() if self._key_down(vk)}
         return active == set(binding.modifiers) and self._key_down(binding.vk)
 
 
@@ -294,7 +246,7 @@ class WindowsSuppressingHotkeyMonitor:
             if not (event.flags & LLKHF_INJECTED):
                 key = int(event.vkCode)
                 is_down = message in {WM_KEYDOWN, WM_SYSKEYDOWN}
-                modifier = _MODIFIER_EVENT_VK.get(key)
+                modifier = MODIFIER_EVENT_VK.get(key)
                 if modifier:
                     if is_down:
                         self._modifiers.add(modifier)
