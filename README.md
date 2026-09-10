@@ -4,7 +4,9 @@ AutoType is a Windows-only Python project for controlled keyboard automation.
 
 ## Current Milestone
 
-Milestone 14 adds an experimental hybrid Word target while preserving the keyboard and native Word targets.
+M14.11.2 is the current shipped checkpoint. It preserves the original keyboard
+target, the native Word target, and the experimental Hybrid target while adding
+bounded-local Hybrid corrections and persistent hotkey settings.
 
 Action flow:
 
@@ -94,18 +96,23 @@ applied in this mode. AutoTyper does not launch Word, save the document, or
 change Word's AutoCorrect/AutoFormat settings. See [Word mode](docs/word-mode.md)
 for the normal-privilege workflow and troubleshooting.
 
-| Target | Default | Behaviour | DOCX structure |
+| Target | Default | Use it for | DOCX structure |
 | --- | --- | --- | --- |
-| `keyboard` | Yes | Simulated typing with human timing and optional typos | Linearized text/action stream |
-| `word` | No | Native insertion into an already-running Word document | Native paragraphs, lists, tables, merges, and supported styles |
-| `hybrid` | No | Experimental COM-created structures with visible keyboard typing | Constrained paragraphs, formatting, lists, and simple tables |
+| `keyboard` | Yes | Portable, human-like simulated typing and the broadest behaviour-engine coverage | Lossy linearized text/action stream; tables become text |
+| `word` | No | Highest structural/formatting fidelity for a source DOCX | Word natively inserts paragraphs, lists, tables, merges, and supported styles |
+| `hybrid` | No | Visible typing into constrained native Word structures | COM-created paragraphs, lists, formatting, and simple bordered tables |
 
 Hybrid mode is experimental and Windows/Word-only. It creates supported native
-Word structures through COM, then types actual source text visibly through the
+Word structures through COM, then types the source text visibly through the
 keyboard executor. It is not proof of human authorship and does not guarantee
-arbitrary DOCX or pixel-perfect fidelity. It currently supports normal/built-in
-heading paragraphs, bold/italic/underline, basic paragraph formatting,
-single-level native lists, and rectangular unmerged tables. See
+arbitrary DOCX or pixel-perfect fidelity. It currently supports normal and
+built-in heading paragraphs; paragraph alignment, indentation, and basic line
+spacing; logical single-level bullet and numbered lists; and rectangular,
+unmerged tables with deterministic visible borders. Direct run-level support
+includes bold, italic, underline, font name, point size, explicit RGB colour,
+superscript, subscript, and strikethrough. Hybrid also provides human timing,
+pause/resume, emergency stop, and bounded-local immediate typo correction.
+See
 [Hybrid mode](docs/hybrid-mode.md) for prerequisites, recovery, and limits.
 
 ## Hotkeys
@@ -114,7 +121,11 @@ single-level native lists, and rectangular unmerged tables. See
 - `CTRL+PAUSE/BREAK` stops the current run
 
 Some laptops expose Pause/Break only through an Fn-layer. Custom bindings can
-still be supplied with `--pause-key` and `--stop-key`.
+still be supplied with `--pause-key` and `--stop-key`, or persisted in
+`%APPDATA%\\AutoTyper\\config.json`. F8 and F12 are no longer the defaults
+because Word uses them for useful editing commands. Risky custom bindings are
+allowed but produce a warning; keyboard polling cannot distinguish a matching
+AutoTyper-generated keystroke from a user's hotkey.
 
 ## Profiles
 
@@ -150,6 +161,9 @@ Supported persisted settings:
 - `progress`
 - `hotkeys.pause` and `hotkeys.stop`
 
+Saved configuration uses schema version 2. The hotkey values are strings such
+as `PAUSE`, `F9`, or `CTRL+SHIFT+F9`.
+
 Precedence is:
 
 1. explicit CLI value
@@ -171,7 +185,7 @@ persists custom controls. CLI hotkey values apply only to that invocation unless
 - DOCX paragraphs and tables are normalized into canonical text using newline and tab separators; merged cell continuations remain empty grid slots instead of duplicating anchor text.
 - DOCX bulleted and numbered lists are normalized into canonical typed prefixes with consistent indentation; Word's default Symbol bullet is emitted as the portable Unicode bullet `U+2022`.
 - `--target word` bypasses this lossy keyboard normalization and inserts the source DOCX as native Word content, preserving the fixture's native lists, tables, merges, styles, and supported formatting.
-- Direct DOCX run formatting is preserved in the action stream using existing `KeyPress` toggles. Supported effects are bold, italic, underline, all caps, small caps, superscript, and subscript.
+- Direct DOCX run formatting is preserved in the keyboard action stream using existing `KeyPress` toggles. Keyboard mode supports bold, italic, underline, all caps, small caps, superscript, and subscript; Hybrid has its separate COM run-formatting contract described above.
 - Blank paragraphs become empty lines in the normalized content stream.
 - Images, headers, footers, and full style inheritance are still ignored.
 
@@ -203,27 +217,25 @@ pytest
 
 ## Limitations
 
-Direct run-level support is limited to the formatting effects listed above. Full style inheritance and parameterized font properties are not included:
+The three targets have intentionally different fidelity boundaries. Keyboard
+mode linearizes DOCX structure and does not reproduce native tables or styles.
+Word mode is fixture-focused rather than an arbitrary-DOCX or pixel-perfect
+guarantee; custom-template/style conflict resolution and unsupported Word
+objects are outside its contract.
 
-- PPTX support
-- clipboard automation
-- OCR
-- GUI
-- full Word style inheritance
-- strikethrough, highlighting, font name, font size, font colour, underline variants, and other font effects
+Hybrid rejects or excludes inline images, non-empty headers/footers, nested or
+merged tables, and multi-paragraph table cells. It supports only simple,
+single-level built-in lists and one paragraph per supported table cell. It does
+not reconstruct theme or automatic font colours, custom styles/templates,
+advanced typography, sections/page setup, shapes, text boxes, comments,
+tracked changes, macros, bookmarks, or arbitrary layout fidelity.
 
-Word fidelity mode is fixture-focused rather than arbitrary-DOCX or
-pixel-perfect reproduction. It does not promise custom-template conflict
-resolution, bookmark insertion, or unsupported objects such as images,
-headers/footers, sections, comments, tracked changes, macros, and shapes.
-
-Hybrid mode intentionally has a narrower boundary: it rejects unsupported
-source structures before touching Word, including merged/nested tables,
-multi-paragraph table cells, inline images, and non-empty headers or footers.
-It does not use the clipboard, mouse coordinates, ribbon automation, image
-recognition, automatic saving, or automatic rollback. If it stops after a
-partial document change, inspect the document and use Word's Undo (`Ctrl+Z`)
-manually.
+Hybrid corrections are bounded to the active text run. Delayed corrections,
+word navigation, selection-based replacement, and corrections crossing run,
+paragraph, or table-cell boundaries are not implemented. Hybrid does not use
+the clipboard, mouse coordinates, ribbon automation, image recognition,
+automatic saving, or automatic rollback. If it stops after a partial document
+change, inspect the document and use Word's Undo (`Ctrl+Z`) manually.
 
 Formatting shortcuts target desktop Word on Windows, require the target document to have focus, and may vary with Word version or keyboard layout. The `EQUALS` action represents the Windows `VK_OEM_PLUS` key for superscript, and `MINUS` represents `VK_OEM_MINUS` for subscript.
 
@@ -231,9 +243,17 @@ Those belong to future milestones.
 
 ## Roadmap
 
-1. Milestone 1: human behaviour engine
-2. Milestone 2: typo and correction engine
-3. Milestone 7: basic DOCX lists
-4. Milestone 8: lightweight persistent configuration
-5. Milestone 9: direct DOCX character formatting expansion
-6. Future milestones: richer application support beyond the fixture-focused Word target
+Shipped through M14.11.2:
+
+- M1–M2: human behaviour, timing, typo, and correction foundations
+- M7–M9: DOCX normalization, lists, and direct keyboard formatting
+- M12–M13: native Word insertion and Word workflow documentation
+- M14–M14.3: experimental Hybrid structures, focus safety, and measurement conversion
+- M14.4–M14.7: table borders, list isolation/restarts, font typography, and character effects
+- M14.9–M14.10.2: Hybrid bounded-local typos, owned-caret pause/resume, safe controls, and hook ABI fixes
+- M14.11–M14.11.2: bounded-local multi-character corrections and persistent hotkey configuration
+
+Future work:
+
+- Optional M14.12: delayed/navigation-based Hybrid typo correction, subject to a safe bounded-caret design
+- PPTX support remains future design work

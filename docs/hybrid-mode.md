@@ -36,24 +36,41 @@ possibility. Reopen both Word and AutoType normally before retrying.
 ## What it supports
 
 - normal paragraphs and built-in Heading styles where available;
-- bold, italic, underline, paragraph alignment, basic indentation, and basic
-  line spacing;
-- single-level native bullet and numbered lists created through Word COM;
-- rectangular, unmerged tables with one paragraph in each cell;
-- visible character-by-character typing with configured profile, speed, and
-  pauses.
-
-Hybrid intentionally disables typo injection for now. Existing delayed typo
-correction can move the Word caret beyond a bounded target, so it is not safe
-until a cursor-local correction implementation is proven.
+- paragraph alignment, basic indentation, and exact point line spacing;
+- direct run-level bold, italic, underline, font name, point size, explicit RGB
+  colour, superscript, subscript, and strikethrough;
+- single-level native bullet and numbered lists, with logical list isolation and
+  numbered groups restarting at 1;
+- rectangular, unmerged tables with one paragraph per cell, supported source
+  widths, and deterministic visible borders;
+- visible character-by-character typing with configured profile, speed, seed,
+  pauses, `PAUSE`/`CTRL+PAUSE` controls, and persistent custom hotkeys;
+- bounded-local immediate typo correction. A wrong local sequence may be
+  corrected with local Backspace and retyping, but the correction remains inside
+  the active Hybrid run.
 
 ## What it does not support
 
 Hybrid rejects a source before modifying Word when it finds inline images,
 non-empty headers/footers, nested or merged tables, or multi-paragraph table
-cells. It does not promise custom styles/templates, advanced font fidelity,
-nested/custom lists, sections/page setup, shapes, text boxes, comments,
-tracked changes, macros, bookmarks, or arbitrary-DOCX/pixel-perfect fidelity.
+cells. It does not promise custom styles/templates, theme or automatic font
+colours, advanced typography, nested/custom lists, sections/page setup, shapes,
+text boxes, comments, tracked changes, macros, bookmarks, or arbitrary-DOCX/
+pixel-perfect fidelity.
+
+Hybrid corrections do not use delayed navigation, word selection, or
+selection-based replacement. Corrections cannot cross a run, paragraph, or
+table-cell boundary. Those richer delayed/navigation-based corrections remain
+optional future work and are not part of the shipped M14.11.2 behavior.
+
+The default controls are `PAUSE` for pause/resume and `CTRL+PAUSE` for
+emergency stop. Values can be persisted as `hotkeys.pause` and `hotkeys.stop`
+in configuration schema version 2 or overridden per invocation with
+`--pause-key` and `--stop-key`; precedence is CLI, then config, then defaults.
+For laptops without a dedicated Pause/Break key, an example is `F9` and
+`CTRL+SHIFT+F9`. Risky bindings remain allowed but produce a warning because
+keyboard polling cannot distinguish matching generated input. F8 and F12 are
+not the defaults because Word uses them for useful editing commands.
 
 ## Safety and recovery
 
