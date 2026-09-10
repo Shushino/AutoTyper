@@ -17,6 +17,8 @@ from .config import (
     DEFAULT_SETTINGS,
     HotkeyConfig,
     TypingConfig,
+    DEFAULT_PAUSE_KEY,
+    DEFAULT_STOP_KEY,
     default_config_path,
     load_settings,
     save_settings,
@@ -45,8 +47,8 @@ CLI_EPILOG = """Examples:
   autotype --speed 110 --save-config --config .pytest-tmp/custom_config.json
 
 Hotkeys during live runs:
-  F8 toggles pause and resume
-  F12 stops the current run
+  PAUSE/BREAK toggles pause and resume
+  CTRL+PAUSE/BREAK stops the current run
 """
 
 
@@ -72,8 +74,8 @@ def build_parser() -> argparse.ArgumentParser:
     progress_group.add_argument("--no-progress", dest="progress", action="store_false", default=argparse.SUPPRESS, help="Disable live progress while typing")
     parser.add_argument("--show-config", action="store_true", help="Print the effective configuration and exit")
     parser.add_argument("--save-config", action="store_true", help="Save the effective configuration and exit")
-    parser.add_argument("--pause-key", default="F8", help="Hotkey for pause/resume")
-    parser.add_argument("--stop-key", default="F12", help="Hotkey for emergency stop")
+    parser.add_argument("--pause-key", default=DEFAULT_PAUSE_KEY, help="Hotkey for pause/resume (default: PAUSE)")
+    parser.add_argument("--stop-key", default=DEFAULT_STOP_KEY, help="Hotkey for emergency stop (default: CTRL+PAUSE)")
     parser.add_argument("--poll-interval", type=float, default=0.05, help="Hotkey polling interval in seconds")
     return parser
 
@@ -367,7 +369,7 @@ def _run_hybrid_target(args: argparse.Namespace, settings: AppSettings) -> int:
 
     print("[Hybrid mode] Experimental COM-assisted visible typing.")
     if settings.typo_rate > 0:
-        print("[Hybrid mode] Typo simulation uses immediate cursor-local correction.")
+        print("[Hybrid mode] Typos are corrected immediately within the current text run.")
     print("[Hybrid mode] Checking destination...")
     try:
         runner = HybridRunner(

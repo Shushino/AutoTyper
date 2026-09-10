@@ -70,7 +70,7 @@ def _apply_typo_behaviour_with_summary(
     rng: random.Random,
     correction_policy: str = "mixed",
 ) -> tuple[list[Action], TypoSummary]:
-    if correction_policy not in {"mixed", "immediate"}:
+    if correction_policy not in {"mixed", "immediate", "bounded_local"}:
         raise ValueError(f"Unknown correction policy: {correction_policy!r}")
     if typo_rate <= 0:
         return list(actions), TypoSummary()
@@ -121,6 +121,8 @@ def _expand_word(
     if mutation is None:
         return [TypeText(word)], 0
 
+    if correction_policy == "bounded_local":
+        return _build_bounded_local_correction(mutation), 1
     if correction_policy == "immediate" or rng.random() < profile.immediate_correction_probability:
         return _build_immediate_correction(mutation), 1
     return _build_delayed_correction(mutation), 1
@@ -182,6 +184,15 @@ def _build_immediate_correction(mutation: TypoMutation) -> list[Action]:
         return actions
 
     raise ValueError(f"Unknown typo kind: {mutation.kind!r}")
+
+
+def _build_bounded_local_correction(mutation: TypoMutation) -> list[Action]:
+    """Type one wrong word, then immediately rewrite it within the same run."""
+
+    actions: list[Action] = [TypeText(mutation.mutated_word)]
+    actions.extend(KeyPress("BACKSPACE") for _ in mutation.mutated_word)
+    actions.append(TypeText(mutation.word))
+    return actions
 
 
 def _build_delayed_correction(mutation: TypoMutation) -> list[Action]:
@@ -251,6 +262,7 @@ build_adjacent_typo = _build_adjacent_typo
 build_double_char_typo = _build_double_char_typo
 build_transposition_typo = _build_transposition_typo
 build_immediate_correction = _build_immediate_correction
+build_bounded_local_correction = _build_bounded_local_correction
 build_delayed_correction = _build_delayed_correction
 
 
@@ -260,6 +272,7 @@ __all__ = [
     "TypoSummary",
     "apply_typo_behaviour",
     "build_adjacent_typo",
+    "build_bounded_local_correction",
     "build_delayed_correction",
     "build_double_char_typo",
     "build_immediate_correction",

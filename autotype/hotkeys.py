@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from .controller import RunController
+from .config import DEFAULT_PAUSE_KEY, DEFAULT_STOP_KEY
 
 
 if os.name == "nt":
@@ -42,6 +43,15 @@ _VK_MAP: dict[str, int] = {
     "F22": 0x85,
     "F23": 0x86,
     "F24": 0x87,
+    "PAUSE": 0x13,
+}
+
+_MODIFIER_VK = {"CTRL": 0x11, "ALT": 0x12, "SHIFT": 0x10}
+_MODIFIER_NAMES = frozenset(_MODIFIER_VK)
+_MODIFIER_EVENT_VK = {
+    0x11: "CTRL", 0xA2: "CTRL", 0xA3: "CTRL",
+    0x12: "ALT", 0xA4: "ALT", 0xA5: "ALT",
+    0x10: "SHIFT", 0xA0: "SHIFT", 0xA1: "SHIFT",
 }
 
 WH_KEYBOARD_LL = 13
@@ -66,11 +76,35 @@ def _resolve_vk(key: str) -> int:
     return _VK_MAP[normalized]
 
 
+@dataclass(frozen=True, slots=True)
+class HotkeyBinding:
+    key: str
+    vk: int
+    modifiers: frozenset[str]
+
+
+def _parse_binding(value: str) -> HotkeyBinding:
+    parts = [part.strip().upper() for part in value.split("+")]
+    if not value.strip() or any(not part for part in parts):
+        raise ValueError(f"Invalid hotkey binding: {value!r}")
+    base = parts[-1]
+    modifiers = parts[:-1]
+    if base in _MODIFIER_NAMES or base not in _VK_MAP:
+        raise ValueError(f"Unsupported hotkey binding: {value!r}")
+    if len(set(modifiers)) != len(modifiers) or any(item not in _MODIFIER_NAMES for item in modifiers):
+        raise ValueError(f"Invalid hotkey modifiers: {value!r}")
+    return HotkeyBinding(base, _VK_MAP[base], frozenset(modifiers))
+
+
+def _same_binding(left: HotkeyBinding, right: HotkeyBinding) -> bool:
+    return left.vk == right.vk and left.modifiers == right.modifiers
+
+
 @dataclass
 class WindowsHotkeyMonitor:
     controller: RunController
-    pause_key: str = "F8"
-    stop_key: str = "F12"
+    pause_key: str = DEFAULT_PAUSE_KEY
+    stop_key: str = DEFAULT_STOP_KEY
     poll_interval_seconds: float = 0.05
 
     def __post_init__(self) -> None:
@@ -78,8 +112,12 @@ class WindowsHotkeyMonitor:
             raise ValueError("poll_interval_seconds must be positive")
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
-        self._pause_vk = _resolve_vk(self.pause_key)
-        self._stop_vk = _resolve_vk(self.stop_key)
+        self._pause_binding = _parse_binding(self.pause_key)
+        self._stop_binding = _parse_binding(self.stop_key)
+        self._pause_vk = self._pause_binding.vk
+        self._stop_vk = self._stop_binding.vk
+        if _same_binding(self._pause_binding, self._stop_binding):
+            raise ValueError("pause_key and stop_key must be different")
 
     def start(self) -> None:
         if os.name != "nt":
@@ -100,8 +138,8 @@ class WindowsHotkeyMonitor:
         stop_was_down = False
 
         while not self._stop_event.is_set():
-            pause_down = bool(_USER32.GetAsyncKeyState(self._pause_vk) & 0x8000)
-            stop_down = bool(_USER32.GetAsyncKeyState(self._stop_vk) & 0x8000)
+            pause_down = self._binding_down(self._pause_binding)
+            stop_down = self._binding_down(self._stop_binding)
 
             if pause_down and not pause_was_down:
                 self.controller.toggle_pause()
@@ -111,6 +149,14 @@ class WindowsHotkeyMonitor:
             pause_was_down = pause_down
             stop_was_down = stop_down
             time.sleep(self.poll_interval_seconds)
+
+    @staticmethod
+    def _key_down(vk: int) -> bool:
+        return bool(_USER32.GetAsyncKeyState(vk) & 0x8000)
+
+    def _binding_down(self, binding: HotkeyBinding) -> bool:
+        active = {name for name, vk in _MODIFIER_VK.items() if self._key_down(vk)}
+        return active == set(binding.modifiers) and self._key_down(binding.vk)
 
 
 class _KBDLLHOOKSTRUCT(ctypes.Structure):
@@ -129,8 +175,8 @@ class WindowsSuppressingHotkeyMonitor:
     def __init__(
         self,
         controller: RunController,
-        pause_key: str = "F8",
-        stop_key: str = "F12",
+        pause_key: str = DEFAULT_PAUSE_KEY,
+        stop_key: str = DEFAULT_STOP_KEY,
         poll_interval_seconds: float = 0.05,
     ) -> None:
         if poll_interval_seconds <= 0:
@@ -139,8 +185,12 @@ class WindowsSuppressingHotkeyMonitor:
         self.pause_key = pause_key
         self.stop_key = stop_key
         self.poll_interval_seconds = poll_interval_seconds
-        self._pause_vk = _resolve_vk(pause_key)
-        self._stop_vk = _resolve_vk(stop_key)
+        self._pause_binding = _parse_binding(pause_key)
+        self._stop_binding = _parse_binding(stop_key)
+        self._pause_vk = self._pause_binding.vk
+        self._stop_vk = self._stop_binding.vk
+        if _same_binding(self._pause_binding, self._stop_binding):
+            raise ValueError("pause_key and stop_key must be different")
         self._stop_event = threading.Event()
         self._ready = threading.Event()
         self._thread: threading.Thread | None = None
@@ -151,6 +201,8 @@ class WindowsSuppressingHotkeyMonitor:
         self._error_code: int | None = None
         self._pause_down = False
         self._stop_down = False
+        self._modifiers: set[str] = set()
+        self._consumed_keys: set[int] = set()
 
     def start(self) -> None:
         if os.name != "nt":
@@ -163,6 +215,8 @@ class WindowsSuppressingHotkeyMonitor:
         self._error_code = None
         self._pause_down = False
         self._stop_down = False
+        self._modifiers.clear()
+        self._consumed_keys.clear()
         self._thread = threading.Thread(target=self._run, name="autotype-hybrid-hotkeys", daemon=True)
         self._thread.start()
         self._ready.wait(timeout=2.0)
@@ -240,18 +294,24 @@ class WindowsSuppressingHotkeyMonitor:
             if not (event.flags & LLKHF_INJECTED):
                 key = int(event.vkCode)
                 is_down = message in {WM_KEYDOWN, WM_SYSKEYDOWN}
-                if key in {self._pause_vk, self._stop_vk}:
+                modifier = _MODIFIER_EVENT_VK.get(key)
+                if modifier:
                     if is_down:
-                        if key == self._pause_vk and not self._pause_down:
-                            self.controller.toggle_pause()
-                            self._pause_down = True
-                        elif key == self._stop_vk and not self._stop_down:
-                            self.controller.request_stop()
-                            self._stop_down = True
-                    elif key == self._pause_vk:
-                        self._pause_down = False
+                        self._modifiers.add(modifier)
                     else:
-                        self._stop_down = False
+                        self._modifiers.discard(modifier)
+                if is_down and key in {self._pause_binding.vk, self._stop_binding.vk}:
+                    active = frozenset(self._modifiers)
+                    if active == self._pause_binding.modifiers and key == self._pause_binding.vk and key not in self._consumed_keys:
+                        self.controller.toggle_pause()
+                        self._consumed_keys.add(key)
+                        return 1
+                    if active == self._stop_binding.modifiers and key == self._stop_binding.vk and key not in self._consumed_keys:
+                        self.controller.request_stop()
+                        self._consumed_keys.add(key)
+                        return 1
+                elif not is_down and key in self._consumed_keys:
+                    self._consumed_keys.remove(key)
                     return 1
         return int(user32.CallNextHookEx(self._hook, code, message, data))
 

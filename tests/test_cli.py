@@ -95,6 +95,12 @@ def test_parser_accepts_text_and_controls() -> None:
     assert args.stop_key == "F11"
 
 
+def test_parser_uses_word_safe_default_controls() -> None:
+    args = build_parser().parse_args(["hello"])
+    assert args.pause_key == "PAUSE"
+    assert args.stop_key == "CTRL+PAUSE"
+
+
 def test_parser_help_includes_examples_and_progress_flag() -> None:
     help_text = build_parser().format_help()
 

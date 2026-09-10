@@ -10,6 +10,7 @@ from docx.shared import Inches, Pt, RGBColor
 
 import autotype.cli as cli_module
 from autotype.actions import KeyPress, TypeText
+from autotype.behaviour import apply_human_behaviour
 from autotype.config import TypingConfig
 from autotype.controller import RunResult, RunState
 from autotype.focus import FocusError, WordFocusGuard
@@ -810,7 +811,7 @@ def test_hybrid_runner_reports_preflight_failure_without_typing() -> None:
     assert not any(item.startswith("type:") for item in events)
 
 
-def test_hybrid_passes_typo_rate_and_immediate_policy(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_hybrid_passes_typo_rate_and_bounded_local_policy(monkeypatch: pytest.MonkeyPatch) -> None:
     import autotype.hybrid_runner as hybrid_runner_module
 
     calls: list[dict] = []
@@ -829,7 +830,7 @@ def test_hybrid_passes_typo_rate_and_immediate_policy(monkeypatch: pytest.Monkey
     runner.run(HybridDocumentPlan(Path("source.docx"), (HybridParagraph((HybridRun("text"),)),)))
 
     assert calls[0]["typo_rate"] == 0.2
-    assert calls[0]["correction_policy"] == "immediate"
+    assert calls[0]["correction_policy"] == "bounded_local"
 
 
 def test_hybrid_rejects_unsafe_navigation_actions_before_typing(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -865,6 +866,24 @@ def test_hybrid_run_lease_tracks_local_text_and_rejects_cross_run_backspace() ->
     lease.record_backspace()
     with pytest.raises(HybridWordError, match="owned run"):
         lease.record_backspace()
+
+
+def test_bounded_local_actions_fit_one_hybrid_run_lease() -> None:
+    intended = "characteristically"
+    actions = apply_human_behaviour(
+        [TypeText(intended)], profile="careful", typo_rate=0.10, seed=2024,
+        correction_policy="bounded_local",
+    )
+    lease = HybridRunLease(document=object(), target="paragraph 1", run_start=100, logical_caret=100)
+    for action in actions:
+        if isinstance(action, TypeText):
+            lease.record_text(action.text)
+        elif isinstance(action, KeyPress):
+            assert action.key == "BACKSPACE"
+            lease.record_backspace()
+
+    assert lease.rendered_text == intended
+    assert lease.logical_caret == 100 + len(intended)
 
 
 def test_hybrid_runner_closes_monitor_when_start_fails() -> None:

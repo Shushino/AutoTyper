@@ -9,6 +9,7 @@ import zlib
 from .behaviour import apply_human_behaviour
 from .actions import KeyPress
 from .config import TypingConfig
+from .config import DEFAULT_PAUSE_KEY, DEFAULT_STOP_KEY
 from .controller import RunController, RunResult, RunState
 from .executors import ActionExecutor
 from .focus import FocusError, WordFocusGuard
@@ -38,8 +39,8 @@ class HybridRunner:
         profile: str,
         seed: int | None,
         typo_rate: float = 0.0,
-        pause_key: str = "F8",
-        stop_key: str = "F12",
+        pause_key: str = DEFAULT_PAUSE_KEY,
+        stop_key: str = DEFAULT_STOP_KEY,
         hotkey_monitor_factory=WindowsSuppressingHotkeyMonitor,
         controller_factory=RunController,
         status: Callable[[str], None] = print,
@@ -110,7 +111,7 @@ class HybridRunner:
                 wpm=self._config.words_per_minute,
                 typo_rate=self._typo_rate,
                 seed=_segment_seed(self._seed, target, run_index),
-                correction_policy="immediate",
+                correction_policy="bounded_local",
             )
             self._validate_actions(actions)
             if completed == 0:

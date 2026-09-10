@@ -9,10 +9,20 @@ from autotype.config import (
     AppSettings,
     ConfigError,
     DEFAULT_SETTINGS,
+    DEFAULT_PAUSE_KEY,
+    DEFAULT_STOP_KEY,
+    HotkeyConfig,
     default_config_path,
     load_settings,
     save_settings,
 )
+
+
+def test_hotkey_defaults_are_word_safe() -> None:
+    config = HotkeyConfig()
+
+    assert config.pause_key == DEFAULT_PAUSE_KEY == "PAUSE"
+    assert config.stop_key == DEFAULT_STOP_KEY == "CTRL+PAUSE"
 
 
 def _write_config(path: Path, payload: dict[str, object]) -> None:

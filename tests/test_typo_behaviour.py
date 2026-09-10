@@ -9,6 +9,7 @@ from autotype.behaviour.typos import (
     QWERTY_ADJACENCY,
     apply_typo_behaviour,
     build_adjacent_typo,
+    build_bounded_local_correction,
     build_delayed_correction,
     build_double_char_typo,
     build_immediate_correction,
@@ -198,6 +199,30 @@ def test_immediate_policy_is_seed_deterministic() -> None:
     assert first == second
 
 
+def test_bounded_local_policy_rewrites_wrong_words_with_backspaces_only() -> None:
+    source_text = "The quick brown fox jumps over the lazy dog. " * 8
+    actions = apply_human_behaviour(
+        [TypeText(source_text)], profile="careful", wpm=45, typo_rate=0.10, seed=2024,
+        correction_policy="bounded_local",
+    )
+    simulator = TextBufferSimulator()
+    simulator.apply(actions)
+
+    assert simulator.text == source_text
+    keypresses = [action.key for action in actions if isinstance(action, KeyPress)]
+    assert keypresses
+    assert set(keypresses) == {"BACKSPACE"}
+
+
+def test_bounded_local_policy_is_seed_deterministic_and_seed_sensitive() -> None:
+    source = [TypeText("the quick brown fox jumps over the lazy dog " * 10)]
+    first = apply_human_behaviour(source, typo_rate=0.10, seed=1234, correction_policy="bounded_local")
+    second = apply_human_behaviour(source, typo_rate=0.10, seed=1234, correction_policy="bounded_local")
+    third = apply_human_behaviour(source, typo_rate=0.10, seed=1235, correction_policy="bounded_local")
+    assert first == second
+    assert first != third
+
+
 def test_qwerty_adjacency_map_is_valid_for_adjacent_typos() -> None:
     mutation = build_adjacent_typo("hello", random.Random(5))
 
@@ -234,6 +259,15 @@ def test_immediate_correction_uses_backspace() -> None:
     actions = build_immediate_correction(mutation)
 
     assert any(isinstance(action, KeyPress) and action.key == "BACKSPACE" for action in actions)
+
+
+def test_bounded_local_correction_rewrites_the_entire_mutated_word() -> None:
+    mutation = build_adjacent_typo("hello", random.Random(13))
+    actions = build_bounded_local_correction(mutation)
+
+    assert actions[0] == TypeText(mutation.mutated_word)
+    assert actions[-1] == TypeText(mutation.word)
+    assert actions[1:-1] == [KeyPress("BACKSPACE")] * len(mutation.mutated_word)
 
 
 def test_delayed_correction_uses_navigation_actions() -> None:

@@ -34,7 +34,7 @@ class Pause:
 
 @dataclass(frozen=True, slots=True)
 class KeyPress:
-    """Emit a logical key press such as ENTER or F12."""
+    """Emit a logical key press such as ENTER or BACKSPACE."""
 
     key: str
 

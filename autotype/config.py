@@ -17,6 +17,8 @@ DEFAULT_SPEED = 40.0
 DEFAULT_TYPO_RATE = 0.0
 DEFAULT_COUNTDOWN = 5.0
 DEFAULT_PROGRESS = False
+DEFAULT_PAUSE_KEY = "PAUSE"
+DEFAULT_STOP_KEY = "CTRL+PAUSE"
 
 
 class ConfigError(ValueError):
@@ -73,8 +75,8 @@ class TypingConfig:
 
 @dataclass(frozen=True, slots=True)
 class HotkeyConfig:
-    pause_key: str = "F8"
-    stop_key: str = "F12"
+    pause_key: str = DEFAULT_PAUSE_KEY
+    stop_key: str = DEFAULT_STOP_KEY
 
     def __post_init__(self) -> None:
         if not self.pause_key:

@@ -110,8 +110,11 @@ single-level native lists, and rectangular unmerged tables. See
 
 ## Hotkeys
 
-- `F8` toggles pause and resume
-- `F12` stops the current run
+- `PAUSE/BREAK` toggles pause and resume
+- `CTRL+PAUSE/BREAK` stops the current run
+
+Some laptops expose Pause/Break only through an Fn-layer. Custom bindings can
+still be supplied with `--pause-key` and `--stop-key`.
 
 ## Profiles
 

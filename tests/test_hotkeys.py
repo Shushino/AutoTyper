@@ -9,6 +9,7 @@ from autotype.hotkeys import (
     WM_KEYDOWN,
     WM_KEYUP,
     WindowsSuppressingHotkeyMonitor,
+    WindowsHotkeyMonitor,
     _HHOOK,
     _LPARAM,
     _WPARAM,
@@ -76,18 +77,48 @@ def _keyboard_event(vk: int, flags: int = 0):
     return ctypes.pointer(event)
 
 
-def test_hybrid_hook_consumes_f8_and_f12_without_forwarding() -> None:
+def test_hybrid_hook_consumes_pause_and_ctrl_pause_without_forwarding() -> None:
     controller = _Controller()
     user32 = _User32()
     monitor = WindowsSuppressingHotkeyMonitor(controller)
 
     assert monitor._handle_hook_event(0, WM_KEYDOWN, _keyboard_event(monitor._pause_vk), user32) == 1
     assert monitor._handle_hook_event(0, WM_KEYUP, _keyboard_event(monitor._pause_vk), user32) == 1
+    assert monitor._handle_hook_event(0, WM_KEYDOWN, _keyboard_event(0xA2), user32) == 37
     assert monitor._handle_hook_event(0, WM_KEYDOWN, _keyboard_event(monitor._stop_vk), user32) == 1
     assert monitor._handle_hook_event(0, WM_KEYUP, _keyboard_event(monitor._stop_vk), user32) == 1
+    assert monitor._handle_hook_event(0, WM_KEYUP, _keyboard_event(0xA2), user32) == 37
     assert controller.toggles == 1
     assert controller.stops == 1
-    assert user32.forwarded == 0
+    assert user32.forwarded == 2
+
+
+def test_default_hook_forwards_old_f8_and_f12() -> None:
+    controller = _Controller()
+    user32 = _User32()
+    monitor = WindowsSuppressingHotkeyMonitor(controller)
+
+    assert monitor._handle_hook_event(0, WM_KEYDOWN, _keyboard_event(0x77), user32) == 37
+    assert monitor._handle_hook_event(0, WM_KEYDOWN, _keyboard_event(0x7B), user32) == 37
+    assert controller.toggles == 0
+    assert controller.stops == 0
+
+
+def test_polling_monitor_requires_exact_pause_chord(monkeypatch: pytest.MonkeyPatch) -> None:
+    states = {0x13: 0x8000, 0x11: 0}
+
+    class User32:
+        @staticmethod
+        def GetAsyncKeyState(vk):
+            return states.get(vk, 0)
+
+    import autotype.hotkeys as hotkeys
+    monkeypatch.setattr(hotkeys, "_USER32", User32())
+    monitor = WindowsHotkeyMonitor(_Controller())
+    assert monitor._binding_down(monitor._pause_binding) is True
+    states[0x11] = 0x8000
+    assert monitor._binding_down(monitor._pause_binding) is False
+    assert monitor._binding_down(monitor._stop_binding) is True
 
 
 def test_hybrid_hook_ignores_key_repeat_until_keyup() -> None:
